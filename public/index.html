@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Case Interview Room</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎤</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ink: #12182B;
+    --navy: #1D2E4A;
+    --navy-2: #28405f;
+    --teal: #2F6F76;
+    --amber: #C97F16;
+    --amber-soft: #F3DDB3;
+    --good: #2F7A55;
+    --warn: #B8862B;
+    --bad: #B14A38;
+
+    --bg: #F4F6FA;
+    --surface: #FFFFFF;
+    --surface-2: #ECEFF5;
+    --border: #DCE1EB;
+    --text: var(--ink);
+    --text-muted: #5B6577;
+    --text-faint: #8790A3;
+
+    --bubble-interviewer: #EEF3F4;
+    --bubble-interviewer-text: #17323A;
+    --bubble-candidate: var(--navy);
+    --bubble-candidate-text: #FFFFFF;
+    --bubble-system: #FBF2DE;
+    --bubble-system-text: #6B4A12;
+
+    --font-display: 'Fraunces', Georgia, 'Times New Roman', serif;
+    --font-body: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0D1420; --surface: #141E2E; --surface-2: #1A2537; --border: #2A3A52;
+      --text: #E7ECF5; --text-muted: #9BA8BE; --text-faint: #6E7B92;
+      --bubble-interviewer: #17232F; --bubble-interviewer-text: #D9E7E8;
+      --bubble-candidate: #2F4C77; --bubble-candidate-text: #FFFFFF;
+      --bubble-system: #2A2013; --bubble-system-text: #E8C98A;
+      --amber-soft: #3B2E14; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0D1420; --surface: #141E2E; --surface-2: #1A2537; --border: #2A3A52;
+    --text: #E7ECF5; --text-muted: #9BA8BE; --text-faint: #6E7B92;
+    --bubble-interviewer: #17232F; --bubble-interviewer-text: #D9E7E8;
+    --bubble-candidate: #2F4C77; --bubble-candidate-text: #FFFFFF;
+    --bubble-system: #2A2013; --bubble-system-text: #E8C98A;
+    --amber-soft: #3B2E14; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+  h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; color: var(--text); }
+
+  .app { min-height: 100vh; display: flex; flex-direction: column; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 20; }
+  .brand { font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; display: flex; align-items: center; gap: 8px; }
+  .brand-mark { width: 26px; height: 26px; border-radius: 7px; background: var(--navy); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 0.8rem; font-weight: 600; flex: none; }
+  .phase-indicator { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px; }
+
+  .screen { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .screen[hidden] { display: none; }
+
+  .screen-setup { align-items: center; padding: 48px 20px 64px; overflow-y: auto; }
+  .setup-inner { width: 100%; max-width: 640px; display: flex; flex-direction: column; gap: 22px; }
+  .setup-inner h1 { font-size: clamp(1.7rem, 4vw, 2.3rem); font-weight: 600; }
+  .lede { margin: 0; color: var(--text-muted); font-size: 0.98rem; max-width: 56ch; }
+  .how-it-works { display: flex; flex-direction: column; gap: 9px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .hiw-item { display: flex; align-items: flex-start; gap: 10px; font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; }
+  .hiw-num { flex: none; width: 20px; height: 20px; margin-top: 1px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); color: var(--teal); font-family: var(--font-mono); font-size: 0.7rem; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+  .question-grid { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+  .q-card { text-align: left; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; transition: border-color 120ms ease, transform 120ms ease; }
+  .q-card:hover { border-color: var(--teal); transform: translateY(-1px); }
+  .q-card:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+  .q-type { font-family: var(--font-mono); font-size: 0.68rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--teal); font-weight: 600; }
+  .q-title { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; }
+  .q-prompt { color: var(--text-muted); font-size: 0.92rem; }
+  .q-start { align-self: flex-start; margin-top: 4px; }
+  .setup-note { margin: 0; padding: 12px 14px; border-radius: 10px; background: var(--bubble-system); color: var(--bubble-system-text); font-size: 0.88rem; }
+
+  .btn { font-family: var(--font-body); font-size: 0.88rem; font-weight: 600; border-radius: 9px; padding: 8px 14px; border: 1px solid transparent; cursor: pointer; white-space: nowrap; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: var(--navy); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: var(--navy-2); }
+  .btn-ghost { background: transparent; color: var(--text); border-color: var(--border); }
+  .btn-ghost:hover:not(:disabled) { border-color: var(--teal); color: var(--teal); }
+  .btn-end { background: transparent; color: var(--bad); border-color: var(--border); }
+  .btn-end:hover:not(:disabled) { border-color: var(--bad); }
+  .btn-small { font-size: 0.78rem; padding: 5px 10px; border-radius: 7px; }
+  .btn-link { background: none; border: none; color: var(--teal); font-weight: 600; cursor: pointer; padding: 0; font-size: 0.85rem; }
+
+  .interview-subbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); position: relative; z-index: 10; }
+  .question-chip { font-size: 0.85rem; color: var(--text-muted); flex: 1 1 220px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .question-chip b { color: var(--text); font-weight: 600; }
+  .timers { display: flex; gap: 14px; align-items: center; }
+  .timer { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; }
+  .timer-label { font-size: 0.62rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-faint); }
+  .timer-value { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 0.95rem; font-weight: 600; }
+  .timer-prep .timer-value { color: var(--amber); }
+  .timer-prep.urgent .timer-value { color: var(--bad); }
+  .subbar-actions { display: flex; gap: 8px; align-items: center; position: relative; }
+  .think-menu { position: absolute; top: calc(100% + 6px); right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 4px; min-width: 150px; box-shadow: 0 8px 24px rgba(10, 16, 30, 0.16); z-index: 30; }
+  .think-menu button { background: none; border: none; text-align: left; padding: 8px 10px; border-radius: 7px; font-size: 0.86rem; color: var(--text); cursor: pointer; font-family: var(--font-body); }
+  .think-menu button:hover { background: var(--surface-2); }
+
+  .transcript { flex: 1; overflow-y: auto; padding: 22px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .msg { display: flex; }
+  .msg-interviewer { justify-content: flex-start; }
+  .msg-candidate { justify-content: flex-end; }
+  .msg-system { justify-content: center; }
+  .bubble { max-width: min(78%, 560px); padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; font-size: 0.94rem; }
+  .msg-interviewer .bubble { background: var(--bubble-interviewer); color: var(--bubble-interviewer-text); border-bottom-left-radius: 4px; }
+  .msg-candidate .bubble { background: var(--bubble-candidate); color: var(--bubble-candidate-text); border-bottom-right-radius: 4px; }
+  .msg-system .bubble { background: var(--bubble-system); color: var(--bubble-system-text); font-family: var(--font-mono); font-size: 0.78rem; border-radius: 999px; padding: 6px 14px; max-width: 90%; text-align: center; }
+  .bubble-role { display: block; font-family: var(--font-mono); font-size: 0.65rem; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.65; margin-bottom: 3px; }
+  .thinking-dots::after { content: '…'; animation: dots 1.2s steps(4, end) infinite; }
+  @keyframes dots { 0%, 20% { content: ''; } 40% { content: '.'; } 60% { content: '..'; } 80%, 100% { content: '...'; } }
+  .bubble-error { color: var(--bad); font-size: 0.82rem; margin-top: 6px; display: flex; gap: 8px; align-items: center; }
+
+  .composer { display: flex; gap: 10px; align-items: flex-end; padding: 14px 20px 18px; border-top: 1px solid var(--border); background: var(--surface); }
+  .composer textarea { flex: 1; resize: none; max-height: 140px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; font-size: 0.94rem; color: var(--text); background: var(--bg); font-family: var(--font-body); }
+  .composer textarea:focus { outline: 2px solid var(--teal); outline-offset: 1px; }
+
+  .screen-eval { overflow-y: auto; padding: 40px 20px 64px; align-items: center; }
+  .eval-inner { width: 100%; max-width: 660px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+  .eval-loading { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 80px 0; color: var(--text-muted); }
+  .spinner { width: 28px; height: 28px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--teal); animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .verdict-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 22px 24px; border-left: 5px solid var(--amber); display: flex; flex-direction: column; gap: 6px; }
+  .verdict-eyebrow { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
+  .verdict-tier { font-family: var(--font-display); font-size: 1.7rem; font-weight: 700; }
+  .verdict-rationale { color: var(--text-muted); font-size: 0.94rem; }
+  .dim-list { display: flex; flex-direction: column; gap: 10px; }
+  .dim-row { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .dim-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+  .dim-name { font-weight: 600; font-size: 0.95rem; }
+  .dim-tier { font-family: var(--font-mono); font-size: 0.72rem; font-weight: 600; padding: 3px 9px; border-radius: 999px; letter-spacing: 0.02em; }
+  .dim-evidence { margin: 0; padding-left: 18px; color: var(--text-muted); font-size: 0.87rem; display: flex; flex-direction: column; gap: 3px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 560px) { .two-col { grid-template-columns: 1fr; } }
+  .list-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; }
+  .list-card h3 { font-size: 0.85rem; font-family: var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 10px; }
+  .list-card.good h3 { color: var(--good); }
+  .list-card.improve h3 { color: var(--warn); }
+  .list-card ul { margin: 0; padding-left: 18px; font-size: 0.9rem; display: flex; flex-direction: column; gap: 7px; color: var(--text); }
+  .eval-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .banner { margin: 0; padding: 12px 14px; border-radius: 10px; font-size: 0.88rem; background: var(--bubble-system); color: var(--bubble-system-text); }
+  .banner.error { background: #FBE6E1; color: #7A2A1B; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .banner.error { background: #3A1E17; color: #F0B7A6; } }
+  :root[data-theme="dark"] .banner.error { background: #3A1E17; color: #F0B7A6; }
+  ::selection { background: var(--amber-soft); }
+  @media (prefers-reduced-motion: reduce) { .spinner, .thinking-dots::after { animation: none; } }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">§</span> Case Interview Room</div>
+    <div class="phase-indicator" id="phaseIndicator">Setup</div>
+  </header>
+
+  <main class="screen screen-setup" id="screenSetup">
+    <div class="setup-inner">
+      <h1>Practice a product case, live.</h1>
+      <p class="lede">Pick a prompt. An interviewer will run the session — think out loud, ask for a minute whenever you need to structure your thoughts, and get a rubric-based evaluation when you're done.</p>
+      <div class="how-it-works">
+        <div class="hiw-item"><span class="hiw-num">1</span>This runs on a shared instructor-provided key — no sign-in needed on your end.</div>
+        <div class="hiw-item"><span class="hiw-num">2</span>Nothing is saved on our server after you close the tab — download your evaluation at the end if you want to keep it.</div>
+      </div>
+      <div class="question-grid" id="questionGrid"></div>
+      <p class="setup-note" id="capabilityNotice" hidden></p>
+    </div>
+  </main>
+
+  <main class="screen screen-interview" id="screenInterview" hidden>
+    <div class="interview-subbar">
+      <div class="question-chip" id="questionChip"></div>
+      <div class="timers">
+        <div class="timer" id="elapsedTimer"><span class="timer-label">Elapsed</span><span class="timer-value" id="elapsedValue">00:00</span></div>
+        <div class="timer timer-prep" id="prepTimerWrap" hidden><span class="timer-label">Prep time</span><span class="timer-value" id="prepValue">00:00</span></div>
+      </div>
+      <div class="subbar-actions">
+        <button class="btn btn-ghost btn-small" id="thinkBtn" type="button">I need a minute</button>
+        <button class="btn btn-end btn-small" id="endBtn" type="button">End interview</button>
+      </div>
+    </div>
+    <div class="transcript" id="transcript"></div>
+    <form class="composer" id="composerForm">
+      <textarea id="composerInput" placeholder="Type your response…" rows="1"></textarea>
+      <button class="btn btn-primary" id="sendBtn" type="submit">Send</button>
+    </form>
+  </main>
+
+  <main class="screen screen-eval" id="screenEval" hidden>
+    <div class="eval-inner" id="evalContent"></div>
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var TIER_COLOR = {
+    "Hard No": "var(--bad)",
+    "Needs Improvement": "#C1652E",
+    "OK": "var(--warn)",
+    "Good": "#3E8F63",
+    "Extremely Good": "var(--good)"
+  };
+
+  var state = {
+    screen: "setup",
+    questions: [],
+    question: null,
+    turns: [],       // {role:'candidate'|'interviewer'|'system_note', content}
+    display: [],     // {who:'interviewer'|'candidate'|'system', text, pending}
+    startedAt: null,
+    prep: { active: false, endsAt: 0 },
+    idleNudged: false,
+    lastActivityAt: null,
+    waiting: false,
+    currentCtl: null
+  };
+
+  var el = {
+    phaseIndicator: document.getElementById("phaseIndicator"),
+    screenSetup: document.getElementById("screenSetup"),
+    screenInterview: document.getElementById("screenInterview"),
+    screenEval: document.getElementById("screenEval"),
+    questionGrid: document.getElementById("questionGrid"),
+    capabilityNotice: document.getElementById("capabilityNotice"),
+    questionChip: document.getElementById("questionChip"),
+    elapsedValue: document.getElementById("elapsedValue"),
+    prepTimerWrap: document.getElementById("prepTimerWrap"),
+    prepValue: document.getElementById("prepValue"),
+    thinkBtn: document.getElementById("thinkBtn"),
+    endBtn: document.getElementById("endBtn"),
+    transcript: document.getElementById("transcript"),
+    composerForm: document.getElementById("composerForm"),
+    composerInput: document.getElementById("composerInput"),
+    sendBtn: document.getElementById("sendBtn"),
+    evalContent: document.getElementById("evalContent")
+  };
+
+  function fmtClock(ms) {
+    var total = Math.max(0, Math.round(ms / 1000));
+    var m = Math.floor(total / 60), s = total % 60;
+    return (m < 10 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
+  }
+
+  function showScreen(name) {
+    state.screen = name;
+    el.screenSetup.hidden = name !== "setup";
+    el.screenInterview.hidden = name !== "interview";
+    el.screenEval.hidden = name !== "eval";
+    el.phaseIndicator.textContent = name === "setup" ? "Setup" : name === "interview" ? "Interview" : "Evaluation";
+  }
+
+  function setNotice(text, isError) {
+    if (!text) { el.capabilityNotice.hidden = true; return; }
+    el.capabilityNotice.hidden = false;
+    el.capabilityNotice.textContent = text;
+    el.capabilityNotice.className = "setup-note" + (isError ? " banner error" : "");
+  }
+
+  function renderQuestionCards() {
+    el.questionGrid.innerHTML = "";
+    state.questions.forEach(function (q) {
+      var card = document.createElement("div");
+      card.className = "q-card";
+      card.tabIndex = 0;
+      var typeEl = document.createElement("div");
+      typeEl.className = "q-type"; typeEl.textContent = q.typeLabel;
+      var titleEl = document.createElement("div");
+      titleEl.className = "q-title"; titleEl.textContent = q.title;
+      var promptEl = document.createElement("div");
+      promptEl.className = "q-prompt"; promptEl.textContent = "“" + q.prompt + "”";
+      var startBtn = document.createElement("button");
+      startBtn.className = "btn btn-primary btn-small q-start"; startBtn.type = "button";
+      startBtn.textContent = "Start this interview";
+      card.appendChild(typeEl); card.appendChild(titleEl); card.appendChild(promptEl); card.appendChild(startBtn);
+      function go() { startInterview(q); }
+      startBtn.addEventListener("click", function (e) { e.stopPropagation(); go(); });
+      card.addEventListener("click", go);
+      card.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+      el.questionGrid.appendChild(card);
+    });
+  }
+
+  function startInterview(question) {
+    state.question = question;
+    state.turns = [];
+    state.display = [];
+    state.startedAt = Date.now();
+    state.prep = { active: false, endsAt: 0 };
+    state.idleNudged = false;
+    state.lastActivityAt = Date.now();
+
+    el.questionChip.innerHTML = "";
+    var b = document.createElement("b");
+    b.textContent = question.typeLabel + ": ";
+    el.questionChip.appendChild(b);
+    el.questionChip.appendChild(document.createTextNode(question.title));
+
+    var greeting = "Hi! Here's today's prompt: “" + question.prompt + "” " +
+      "Think out loud as you work through it — ask me anything along the way, and if you want a minute to sketch your structure first, just hit “I need a minute.” Whenever you're ready, go ahead.";
+    state.turns.push({ role: "interviewer", content: greeting });
+    pushDisplay("interviewer", greeting);
+
+    showScreen("interview");
+    el.composerInput.value = "";
+    el.composerInput.focus();
+    updateThinkBtn();
+  }
+
+  function pushDisplay(who, text) {
+    state.display.push({ who: who, text: text, id: state.display.length });
+    renderTranscript();
+  }
+
+  function renderTranscript() {
+    el.transcript.innerHTML = "";
+    state.display.forEach(function (m) {
+      var row = document.createElement("div");
+      row.className = "msg msg-" + m.who;
+      var bubble = document.createElement("div");
+      bubble.className = "bubble";
+      if (m.who !== "system") {
+        var role = document.createElement("span");
+        role.className = "bubble-role";
+        role.textContent = m.who === "interviewer" ? "Interviewer" : "You";
+        bubble.appendChild(role);
+      }
+      var textNode = document.createElement("span");
+      if (m.pending) { textNode.className = "thinking-dots"; textNode.textContent = "Thinking"; }
+      else { textNode.textContent = m.text; }
+      bubble.appendChild(textNode);
+      row.appendChild(bubble);
+      row.dataset.id = m.id;
+      el.transcript.appendChild(row);
+    });
+    el.transcript.scrollTop = el.transcript.scrollHeight;
+  }
+
+  function setWaiting(isWaiting) {
+    state.waiting = isWaiting;
+    el.sendBtn.disabled = isWaiting;
+    el.composerInput.disabled = isWaiting;
+  }
+
+  async function sendToInterviewer() {
+    if (state.waiting) return;
+    setWaiting(true);
+    var pendingEntry = { who: "interviewer", text: "", id: state.display.length, pending: true };
+    state.display.push(pendingEntry);
+    renderTranscript();
+
+    var ctl = new AbortController();
+    state.currentCtl = ctl;
+    try {
+      var resp = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId: state.question.id, turns: state.turns }),
+        signal: ctl.signal
+      });
+      var data = await resp.json();
+      if (!resp.ok) { handleApiError(data, pendingEntry); return; }
+      pendingEntry.pending = false;
+      pendingEntry.text = data.text;
+      state.turns.push({ role: "interviewer", content: data.text });
+      renderTranscript();
+    } catch (e) {
+      if (e.name === "AbortError") {
+        state.display.splice(state.display.indexOf(pendingEntry), 1);
+        renderTranscript();
+      } else {
+        handleApiError({ error: "network_error", message: "Couldn't reach the server. Check your connection and retry." }, pendingEntry);
+      }
+    } finally {
+      setWaiting(false);
+      state.currentCtl = null;
+    }
+  }
+
+  function handleApiError(data, pendingEntry) {
+    var idx = state.display.indexOf(pendingEntry);
+    if (idx === -1) return;
+    pendingEntry.pending = false;
+    pendingEntry.text = pendingEntry.text || "";
+    renderTranscript();
+    var row = el.transcript.querySelector('[data-id="' + pendingEntry.id + '"] .bubble');
+    if (row) {
+      var errDiv = document.createElement("div");
+      errDiv.className = "bubble-error";
+      var msg = document.createElement("span");
+      msg.textContent = (data && data.message) || "Something went wrong.";
+      errDiv.appendChild(msg);
+      var retry = document.createElement("button");
+      retry.className = "btn-link"; retry.textContent = "Retry";
+      retry.addEventListener("click", function () {
+        state.display.splice(state.display.indexOf(pendingEntry), 1);
+        renderTranscript();
+        sendToInterviewer();
+      });
+      errDiv.appendChild(retry);
+      row.appendChild(errDiv);
+    }
+  }
+
+  function addSystemNote(displayText, apiText) {
+    pushDisplay("system", displayText);
+    state.turns.push({ role: "system_note", content: apiText });
+  }
+
+  el.composerForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var text = el.composerInput.value.trim();
+    if (!text || state.waiting) return;
+    if (state.prep.active) cancelPrep(false);
+    state.turns.push({ role: "candidate", content: text });
+    pushDisplay("candidate", text);
+    el.composerInput.value = "";
+    el.composerInput.style.height = "auto";
+    state.lastActivityAt = Date.now();
+    state.idleNudged = false;
+    sendToInterviewer();
+  });
+
+  el.composerInput.addEventListener("input", function () {
+    el.composerInput.style.height = "auto";
+    el.composerInput.style.height = Math.min(140, el.composerInput.scrollHeight) + "px";
+  });
+  el.composerInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); el.composerForm.requestSubmit(); }
+  });
+
+  var thinkMenuEl = null;
+  el.thinkBtn.addEventListener("click", function () {
+    if (state.prep.active) { cancelPrep(true); return; }
+    if (thinkMenuEl) { closeThinkMenu(); return; }
+    thinkMenuEl = document.createElement("div");
+    thinkMenuEl.className = "think-menu";
+    [["2 minutes", 2], ["3 minutes", 3]].forEach(function (opt) {
+      var b = document.createElement("button");
+      b.type = "button"; b.textContent = opt[0] + " to think";
+      b.addEventListener("click", function () { startPrep(opt[1]); closeThinkMenu(); });
+      thinkMenuEl.appendChild(b);
+    });
+    el.thinkBtn.parentElement.appendChild(thinkMenuEl);
+    setTimeout(function () { document.addEventListener("click", onDocClick); }, 0);
+  });
+  function onDocClick(e) { if (thinkMenuEl && !thinkMenuEl.contains(e.target) && e.target !== el.thinkBtn) closeThinkMenu(); }
+  function closeThinkMenu() { if (thinkMenuEl) { thinkMenuEl.remove(); thinkMenuEl = null; document.removeEventListener("click", onDocClick); } }
+
+  function startPrep(minutes) {
+    state.prep = { active: true, endsAt: Date.now() + minutes * 60 * 1000 };
+    addSystemNote("⏱️ Taking " + minutes + " minute" + (minutes > 1 ? "s" : "") + " to think.",
+      "candidate requested " + minutes + " minutes to think before responding");
+    updateThinkBtn();
+  }
+  function cancelPrep(showNote) {
+    state.prep.active = false;
+    el.prepTimerWrap.hidden = true;
+    if (showNote) addSystemNote("Back early — whenever you're ready.", "candidate ended their thinking time early");
+    updateThinkBtn();
+  }
+  function prepExpired() {
+    state.prep.active = false;
+    el.prepTimerWrap.hidden = true;
+    addSystemNote("⏰ Time's up! Share your structure whenever you're ready — or ask for one more minute.",
+      "the candidate's requested prep time has ended");
+    updateThinkBtn();
+  }
+  function updateThinkBtn() { el.thinkBtn.textContent = state.prep.active ? "I'm ready" : "I need a minute"; }
+
+  el.endBtn.addEventListener("click", function () {
+    if (el.endBtn.dataset.armed === "1") { endInterview(); return; }
+    el.endBtn.dataset.armed = "1";
+    var original = el.endBtn.textContent;
+    el.endBtn.textContent = "Click again to end";
+    setTimeout(function () { if (el.endBtn) { el.endBtn.dataset.armed = "0"; el.endBtn.textContent = original; } }, 3000);
+  });
+
+  setInterval(function () {
+    if (state.screen !== "interview" || !state.startedAt) return;
+    el.elapsedValue.textContent = fmtClock(Date.now() - state.startedAt);
+    if (state.prep.active) {
+      var remaining = state.prep.endsAt - Date.now();
+      el.prepTimerWrap.hidden = false;
+      el.prepTimerWrap.classList.toggle("urgent", remaining <= 20000);
+      if (remaining <= 0) prepExpired(); else el.prepValue.textContent = fmtClock(remaining);
+    }
+    if (!state.prep.active && !state.waiting && !state.idleNudged && state.lastActivityAt) {
+      if (Date.now() - state.lastActivityAt > 3 * 60 * 1000) {
+        state.idleNudged = true;
+        addSystemNote("Still there? Ask for a hint any time, or say if you'd like another minute.",
+          "the candidate has been quiet for a few minutes");
+      }
+    }
+  }, 1000);
+
+  function endInterview() {
+    if (state.currentCtl) state.currentCtl.abort();
+    showScreen("eval");
+    renderEvalLoading();
+    runEvaluation();
+  }
+
+  function renderEvalLoading() {
+    el.evalContent.innerHTML = "";
+    var wrap = document.createElement("div"); wrap.className = "eval-loading";
+    var spinner = document.createElement("div"); spinner.className = "spinner";
+    var label = document.createElement("div"); label.textContent = "Reading back through the interview and writing up feedback…";
+    wrap.appendChild(spinner); wrap.appendChild(label);
+    el.evalContent.appendChild(wrap);
+  }
+
+  async function runEvaluation() {
+    try {
+      var resp = await fetch("/api/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questionId: state.question.id, turns: state.turns })
+      });
+      var data = await resp.json();
+      if (!resp.ok) return renderEvalError(data);
+      renderEvalResult(data);
+    } catch (e) {
+      renderEvalError({ error: "network_error", message: "Couldn't reach the server." });
+    }
+  }
+
+  function tierBadge(tier) {
+    var span = document.createElement("span");
+    span.className = "dim-tier";
+    span.textContent = tier;
+    var color = TIER_COLOR[tier] || "var(--text-muted)";
+    span.style.color = color;
+    span.style.background = "color-mix(in srgb, " + color + " 16%, transparent)";
+    return span;
+  }
+
+  function renderEvalResult(data) {
+    el.evalContent.innerHTML = "";
+    var verdict = document.createElement("div");
+    verdict.className = "verdict-card";
+    verdict.style.borderLeftColor = TIER_COLOR[data.overallTier] || "var(--amber)";
+    var eyebrow = document.createElement("div"); eyebrow.className = "verdict-eyebrow"; eyebrow.textContent = "Overall";
+    var tierH = document.createElement("div"); tierH.className = "verdict-tier"; tierH.textContent = data.overallTier || "—";
+    var rationale = document.createElement("div"); rationale.className = "verdict-rationale"; rationale.textContent = data.overallRationale || "";
+    verdict.appendChild(eyebrow); verdict.appendChild(tierH); verdict.appendChild(rationale);
+    el.evalContent.appendChild(verdict);
+
+    var dimList = document.createElement("div"); dimList.className = "dim-list";
+    (data.dimensions || []).forEach(function (d) {
+      var row = document.createElement("div"); row.className = "dim-row";
+      var head = document.createElement("div"); head.className = "dim-head";
+      var name = document.createElement("div"); name.className = "dim-name"; name.textContent = d.name;
+      head.appendChild(name); head.appendChild(tierBadge(d.tier));
+      row.appendChild(head);
+      var ul = document.createElement("ul"); ul.className = "dim-evidence";
+      (d.evidence || []).forEach(function (ev) { var li = document.createElement("li"); li.textContent = ev; ul.appendChild(li); });
+      row.appendChild(ul);
+      dimList.appendChild(row);
+    });
+    el.evalContent.appendChild(dimList);
+
+    var cols = document.createElement("div"); cols.className = "two-col";
+    cols.appendChild(listCard("What went well", data.strengths || [], "good"));
+    cols.appendChild(listCard("What to work on", data.improvements || [], "improve"));
+    el.evalContent.appendChild(cols);
+
+    var actions = document.createElement("div"); actions.className = "eval-actions";
+    var again = document.createElement("button");
+    again.className = "btn btn-primary"; again.type = "button"; again.textContent = "Practice again";
+    again.addEventListener("click", function () { showScreen("setup"); setNotice(""); });
+    actions.appendChild(again);
+
+    var dl = document.createElement("button");
+    dl.className = "btn btn-ghost"; dl.type = "button"; dl.textContent = "Download evaluation";
+    dl.addEventListener("click", function () { downloadEvaluation(data); });
+    actions.appendChild(dl);
+
+    el.evalContent.appendChild(actions);
+  }
+
+  function listCard(title, items, kind) {
+    var card = document.createElement("div"); card.className = "list-card " + kind;
+    var h = document.createElement("h3"); h.textContent = title; card.appendChild(h);
+    var ul = document.createElement("ul");
+    items.forEach(function (t) { var li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
+    card.appendChild(ul);
+    return card;
+  }
+
+  function renderEvalError(data) {
+    el.evalContent.innerHTML = "";
+    var banner = document.createElement("p"); banner.className = "banner error";
+    banner.textContent = (data && data.message) || "Couldn't generate the evaluation. You can try again.";
+    el.evalContent.appendChild(banner);
+    var retry = document.createElement("button");
+    retry.className = "btn btn-primary"; retry.type = "button"; retry.textContent = "Try again";
+    retry.style.marginTop = "14px";
+    retry.addEventListener("click", function () { renderEvalLoading(); runEvaluation(); });
+    el.evalContent.appendChild(retry);
+  }
+
+  function transcriptForDownload() {
+    return state.turns.map(function (t) {
+      if (t.role === "system_note") return "(timing note: " + t.content + ")";
+      return (t.role === "candidate" ? "Candidate: " : "Interviewer: ") + t.content;
+    }).join("\n\n");
+  }
+
+  function downloadEvaluation(data) {
+    var lines = ["# Mock Interview Evaluation", "", "**Question:** " + state.question.title,
+      "**Overall:** " + data.overallTier + " — " + data.overallRationale, ""];
+    (data.dimensions || []).forEach(function (d) {
+      lines.push("## " + d.name + " — " + d.tier);
+      (d.evidence || []).forEach(function (ev) { lines.push("- " + ev); });
+      lines.push("");
+    });
+    lines.push("## What went well");
+    (data.strengths || []).forEach(function (s) { lines.push("- " + s); });
+    lines.push("");
+    lines.push("## What to work on");
+    (data.improvements || []).forEach(function (s) { lines.push("- " + s); });
+    lines.push(""); lines.push("---"); lines.push(""); lines.push("## Full transcript"); lines.push("");
+    lines.push(transcriptForDownload());
+
+    var blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = "mock-interview-evaluation.md";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+
+  async function boot() {
+    try {
+      var resp = await fetch("/api/questions");
+      if (!resp.ok) throw new Error("bad status");
+      state.questions = await resp.json();
+      renderQuestionCards();
+    } catch (e) {
+      setNotice("Couldn't reach the server that powers this app. Try reloading the page in a minute.", true);
+    }
+  }
+  boot();
+})();
+</script>
+</body>
+</html>
