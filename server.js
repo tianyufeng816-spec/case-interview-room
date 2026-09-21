@@ -182,72 +182,79 @@ app.post("/api/chat", async (req, res) => {
 
   // Streamed response: Server-Sent Events, one `data: {"delta": "..."}` line per
   // token chunk, `data: {"error": ...}` on failure, ending with `data: [DONE]`.
+  //
+  // Headers are flushed to the client BEFORE the (slower) upstream call is even
+  // made. This matters behind a reverse proxy: if we wait for the upstream LLM
+  // call to finish before sending our own response headers, a proxy tuned for
+  // quick responses can decide the origin is unhealthy and substitute its own
+  // error page — which the browser sees as an opaque, instant 502/504 with no
+  // trace of our own error handling. Flushing early means every failure past
+  // this point is reported to the client as a normal SSE `error` event instead.
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // disable nginx-style proxy buffering of the stream
+  if (res.flushHeaders) res.flushHeaders();
+
   const controller = new AbortController();
   req.on("close", () => controller.abort());
   const timeout = setTimeout(() => controller.abort(), 60000);
 
-  let upstream;
+  function sendSseError(kind, message) {
+    if (!res.writableEnded) {
+      res.write("data: " + JSON.stringify({ error: kind, message: message }) + "\n\n");
+    }
+  }
+
   try {
-    upstream = await fetch(API_BASE + "/v1/chat/completions", {
+    const upstream = await fetch(API_BASE + "/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + AI_BUILDER_TOKEN },
       body: JSON.stringify({ model: MODEL, messages: messages, temperature: 0.8, max_tokens: 350, stream: true }),
       signal: controller.signal
     });
-  } catch (e) {
-    clearTimeout(timeout);
-    console.error("chat stream connect error", e.message);
-    if (e.name === "AbortError") return res.status(504).json({ error: "timeout", message: "That took too long. Try again." });
-    return res.status(502).json({ error: "upstream_error", message: "Something went wrong reaching the interviewer. Try again." });
-  }
 
-  if (!upstream.ok || !upstream.body) {
-    clearTimeout(timeout);
-    const body = await upstream.text().catch(() => "");
-    console.error("chat stream upstream error", upstream.status, body);
-    return res.status(502).json({ error: "upstream_error", message: "Something went wrong reaching the interviewer. Try again." });
-  }
-
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  if (res.flushHeaders) res.flushHeaders();
-
-  const reader = upstream.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let gotAnyDelta = false;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop();
-      for (const part of parts) {
-        const line = part.trim();
-        if (!line.startsWith("data:")) continue;
-        const payload = line.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-        let json;
-        try { json = JSON.parse(payload); } catch (e) { continue; }
-        const delta = json.choices && json.choices[0] && json.choices[0].delta && json.choices[0].delta.content;
-        if (delta) {
-          gotAnyDelta = true;
-          res.write("data: " + JSON.stringify({ delta: delta }) + "\n\n");
+    if (!upstream.ok || !upstream.body) {
+      const body = await upstream.text().catch(() => "");
+      console.error("chat stream upstream error", upstream.status, body);
+      sendSseError("upstream_error", "Something went wrong reaching the interviewer. Try again.");
+    } else {
+      const reader = upstream.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let gotAnyDelta = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop();
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (!payload || payload === "[DONE]") continue;
+          let json;
+          try { json = JSON.parse(payload); } catch (e) { continue; }
+          const delta = json.choices && json.choices[0] && json.choices[0].delta && json.choices[0].delta.content;
+          if (delta) {
+            gotAnyDelta = true;
+            res.write("data: " + JSON.stringify({ delta: delta }) + "\n\n");
+          }
         }
       }
+      if (!gotAnyDelta) sendSseError("empty_completion", "No reply came back. Try again.");
     }
-    if (!gotAnyDelta) res.write("data: " + JSON.stringify({ error: "empty_completion", message: "No reply came back. Try again." }) + "\n\n");
-    res.write("data: [DONE]\n\n");
   } catch (e) {
-    console.error("chat stream error", e.message);
-    if (!res.writableEnded) {
-      res.write("data: " + JSON.stringify({ error: e.name === "AbortError" ? "timeout" : "upstream_error", message: "Something went wrong reaching the interviewer. Try again." }) + "\n\n");
-    }
+    console.error("chat stream error", e && e.message);
+    sendSseError(e && e.name === "AbortError" ? "timeout" : "upstream_error", "Something went wrong reaching the interviewer. Try again.");
   } finally {
     clearTimeout(timeout);
-    res.end();
+    if (!res.writableEnded) {
+      res.write("data: [DONE]\n\n");
+      res.end();
+    }
   }
 });
 
