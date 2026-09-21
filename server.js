@@ -180,15 +180,122 @@ app.post("/api/chat", async (req, res) => {
       return { role: t.role === "candidate" ? "user" : "assistant", content: content };
     }));
 
+  // Streamed response: Server-Sent Events, one `data: {"delta": "..."}` line per
+  // token chunk, `data: {"error": ...}` on failure, ending with `data: [DONE]`.
+  const controller = new AbortController();
+  req.on("close", () => controller.abort());
+  const timeout = setTimeout(() => controller.abort(), 60000);
+
+  let upstream;
   try {
-    const data = await callChatCompletions(messages, { temperature: 0.8, maxTokens: 350 });
-    const text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
-    if (!text) return res.status(502).json({ error: "empty_completion", message: "No reply came back. Try again." });
-    res.json({ text: text.trim() });
+    upstream = await fetch(API_BASE + "/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + AI_BUILDER_TOKEN },
+      body: JSON.stringify({ model: MODEL, messages: messages, temperature: 0.8, max_tokens: 350, stream: true }),
+      signal: controller.signal
+    });
   } catch (e) {
-    console.error("chat error", e.status, e.body || e.message);
+    clearTimeout(timeout);
+    console.error("chat stream connect error", e.message);
     if (e.name === "AbortError") return res.status(504).json({ error: "timeout", message: "That took too long. Try again." });
-    res.status(502).json({ error: "upstream_error", message: "Something went wrong reaching the interviewer. Try again." });
+    return res.status(502).json({ error: "upstream_error", message: "Something went wrong reaching the interviewer. Try again." });
+  }
+
+  if (!upstream.ok || !upstream.body) {
+    clearTimeout(timeout);
+    const body = await upstream.text().catch(() => "");
+    console.error("chat stream upstream error", upstream.status, body);
+    return res.status(502).json({ error: "upstream_error", message: "Something went wrong reaching the interviewer. Try again." });
+  }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  if (res.flushHeaders) res.flushHeaders();
+
+  const reader = upstream.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let gotAnyDelta = false;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop();
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        let json;
+        try { json = JSON.parse(payload); } catch (e) { continue; }
+        const delta = json.choices && json.choices[0] && json.choices[0].delta && json.choices[0].delta.content;
+        if (delta) {
+          gotAnyDelta = true;
+          res.write("data: " + JSON.stringify({ delta: delta }) + "\n\n");
+        }
+      }
+    }
+    if (!gotAnyDelta) res.write("data: " + JSON.stringify({ error: "empty_completion", message: "No reply came back. Try again." }) + "\n\n");
+    res.write("data: [DONE]\n\n");
+  } catch (e) {
+    console.error("chat stream error", e.message);
+    if (!res.writableEnded) {
+      res.write("data: " + JSON.stringify({ error: e.name === "AbortError" ? "timeout" : "upstream_error", message: "Something went wrong reaching the interviewer. Try again." }) + "\n\n");
+    }
+  } finally {
+    clearTimeout(timeout);
+    res.end();
+  }
+});
+
+app.post("/api/transcribe", express.raw({ type: () => true, limit: "20mb" }), async (req, res) => {
+  const ip = req.ip;
+  if (rateLimited(ip, 30, 5 * 60 * 1000)) {
+    return res.status(429).json({ error: "rate_limited", message: "Too many requests — wait a moment and try again." });
+  }
+  if (!req.body || !req.body.length) {
+    return res.status(400).json({ error: "invalid_request", message: "No audio received." });
+  }
+  try {
+    const form = new FormData();
+    const mimeType = (req.headers["content-type"] || "audio/webm").split(";")[0];
+    const ext = mimeType.includes("mp4") ? "m4a" : mimeType.includes("ogg") ? "ogg" : mimeType.includes("wav") ? "wav" : "webm";
+    const blob = new Blob([req.body], { type: mimeType });
+    form.append("audio_file", blob, "recording." + ext);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+    let resp;
+    try {
+      resp = await fetch(API_BASE + "/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + AI_BUILDER_TOKEN },
+        body: form,
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+    const text = await resp.text();
+    if (!resp.ok) {
+      console.error("transcribe upstream error", resp.status, text);
+      return res.status(502).json({ error: "upstream_error", message: "Couldn't transcribe that. Try again, or just type it." });
+    }
+    let data;
+    try { data = JSON.parse(text); } catch (e) { data = {}; }
+    const transcript = data.text || data.transcript ||
+      (Array.isArray(data.segments) ? data.segments.map((s) => s.text).join(" ") : "") || "";
+    if (!transcript.trim()) {
+      return res.status(502).json({ error: "empty_transcript", message: "Didn't catch that — try again, or just type it." });
+    }
+    res.json({ text: transcript.trim() });
+  } catch (e) {
+    console.error("transcribe error", e.name, e.message);
+    if (e.name === "AbortError") return res.status(504).json({ error: "timeout", message: "That took too long. Try again." });
+    res.status(502).json({ error: "upstream_error", message: "Couldn't transcribe that. Try again, or just type it." });
   }
 });
 

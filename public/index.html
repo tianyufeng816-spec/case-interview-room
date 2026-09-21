@@ -99,6 +99,12 @@
   .btn-end:hover:not(:disabled) { border-color: var(--bad); }
   .btn-small { font-size: 0.78rem; padding: 5px 10px; border-radius: 7px; }
   .btn-link { background: none; border: none; color: var(--teal); font-weight: 600; cursor: pointer; padding: 0; font-size: 0.85rem; }
+  .btn-toggle-on { background: var(--teal); color: #fff; border-color: var(--teal); }
+  .btn-mic { flex: none; font-size: 1.05rem; padding: 8px 12px; align-self: flex-end; }
+  .btn-mic.recording { background: var(--bad); color: #fff; border-color: var(--bad); animation: mic-pulse 1.4s ease-in-out infinite; }
+  @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(177, 74, 56, 0.45); } 50% { box-shadow: 0 0 0 8px rgba(177, 74, 56, 0); } }
+  .mic-status { font-size: 0.78rem; color: var(--text-muted); padding: 0 20px 8px; font-family: var(--font-mono); }
+  @media (prefers-reduced-motion: reduce) { .btn-mic.recording { animation: none; } }
 
   .interview-subbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); position: relative; z-index: 10; }
   .question-chip { font-size: 0.85rem; color: var(--text-muted); flex: 1 1 220px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -192,13 +198,16 @@
         <div class="timer timer-prep" id="prepTimerWrap" hidden><span class="timer-label">Prep time</span><span class="timer-value" id="prepValue">00:00</span></div>
       </div>
       <div class="subbar-actions">
+        <button class="btn btn-ghost btn-small" id="voiceModeBtn" type="button" aria-pressed="false" title="Have the interviewer speak replies aloud">🔇 Voice mode</button>
         <button class="btn btn-ghost btn-small" id="thinkBtn" type="button">I need a minute</button>
         <button class="btn btn-end btn-small" id="endBtn" type="button">End interview</button>
       </div>
     </div>
     <div class="transcript" id="transcript"></div>
+    <p class="mic-status" id="micStatus" hidden></p>
     <form class="composer" id="composerForm">
-      <textarea id="composerInput" placeholder="Type your response…" rows="1"></textarea>
+      <button class="btn btn-ghost btn-mic" id="micBtn" type="button" title="Record your answer">🎙️</button>
+      <textarea id="composerInput" placeholder="Type your response, or tap the mic to speak it…" rows="1"></textarea>
       <button class="btn btn-primary" id="sendBtn" type="submit">Send</button>
     </form>
   </main>
@@ -233,7 +242,11 @@
     waiting: false,
     currentCtl: null,
     timeWarned: false,
-    hardStopped: false
+    hardStopped: false,
+    voiceMode: false,
+    recording: false,
+    mediaRecorder: null,
+    audioChunks: []
   };
 
   var TOTAL_LIMIT_MS = 40 * 60 * 1000;
@@ -252,6 +265,9 @@
     prepValue: document.getElementById("prepValue"),
     thinkBtn: document.getElementById("thinkBtn"),
     endBtn: document.getElementById("endBtn"),
+    voiceModeBtn: document.getElementById("voiceModeBtn"),
+    micBtn: document.getElementById("micBtn"),
+    micStatus: document.getElementById("micStatus"),
     transcript: document.getElementById("transcript"),
     composerForm: document.getElementById("composerForm"),
     composerInput: document.getElementById("composerInput"),
@@ -325,6 +341,7 @@
       "Think out loud as you work through it — ask me anything along the way, and if you want a minute to sketch your structure first, just hit “I need a minute.” Whenever you're ready, go ahead.";
     state.turns.push({ role: "interviewer", content: greeting });
     pushDisplay("interviewer", greeting);
+    if (state.voiceMode) speakText(greeting);
 
     showScreen("interview");
     el.composerInput.value = "";
@@ -376,6 +393,8 @@
 
     var ctl = new AbortController();
     state.currentCtl = ctl;
+    var fullText = "";
+    var sawError = null;
     try {
       var resp = await fetch("/api/chat", {
         method: "POST",
@@ -383,12 +402,44 @@
         body: JSON.stringify({ questionId: state.question.id, turns: state.turns }),
         signal: ctl.signal
       });
-      var data = await resp.json();
-      if (!resp.ok) { handleApiError(data, pendingEntry); return; }
-      pendingEntry.pending = false;
-      pendingEntry.text = data.text;
-      state.turns.push({ role: "interviewer", content: data.text });
-      renderTranscript();
+      if (!resp.ok || !resp.body) {
+        var errData = {};
+        try { errData = await resp.json(); } catch (e) { /* ignore */ }
+        handleApiError(errData, pendingEntry);
+        return;
+      }
+
+      var reader = resp.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = "";
+      readLoop:
+      while (true) {
+        var chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        var parts = buffer.split("\n\n");
+        buffer = parts.pop();
+        for (var i = 0; i < parts.length; i++) {
+          var line = parts[i].trim();
+          if (line.slice(0, 5) !== "data:") continue;
+          var payload = line.slice(5).trim();
+          if (!payload || payload === "[DONE]") continue;
+          var obj;
+          try { obj = JSON.parse(payload); } catch (e) { continue; }
+          if (obj.error) { sawError = obj; break readLoop; }
+          if (obj.delta) {
+            pendingEntry.pending = false;
+            fullText += obj.delta;
+            pendingEntry.text = fullText;
+            renderTranscript();
+          }
+        }
+      }
+
+      if (sawError) { handleApiError(sawError, pendingEntry); return; }
+      if (!fullText) { handleApiError({ message: "No reply came back. Try again." }, pendingEntry); return; }
+      state.turns.push({ role: "interviewer", content: fullText });
+      if (state.voiceMode) speakText(fullText);
     } catch (e) {
       if (e.name === "AbortError") {
         state.display.splice(state.display.indexOf(pendingEntry), 1);
@@ -432,10 +483,49 @@
     state.turns.push({ role: "system_note", content: apiText });
   }
 
+  // ---- Voice mode (text-to-speech) ----------------------------------
+  var speechSupported = "speechSynthesis" in window;
+  if (speechSupported) {
+    window.speechSynthesis.getVoices(); // warm the voice list; some browsers load it async
+    window.speechSynthesis.addEventListener && window.speechSynthesis.addEventListener("voiceschanged", function () {});
+  }
+  function speakText(text) {
+    if (!speechSupported || !text) return;
+    window.speechSynthesis.cancel();
+    var utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 1.0;
+    utter.pitch = 1.0;
+    var voices = window.speechSynthesis.getVoices();
+    var preferred = voices.find(function (v) { return /en/i.test(v.lang) && /Natural|Enhanced|Premium/i.test(v.name); }) ||
+      voices.find(function (v) { return v.lang && v.lang.toLowerCase().indexOf("en") === 0; });
+    if (preferred) utter.voice = preferred;
+    window.speechSynthesis.speak(utter);
+  }
+  function stopSpeaking() { if (speechSupported) window.speechSynthesis.cancel(); }
+
+  el.voiceModeBtn.addEventListener("click", function () {
+    state.voiceMode = !state.voiceMode;
+    el.voiceModeBtn.textContent = state.voiceMode ? "🔊 Voice mode" : "🔇 Voice mode";
+    el.voiceModeBtn.classList.toggle("btn-toggle-on", state.voiceMode);
+    el.voiceModeBtn.setAttribute("aria-pressed", state.voiceMode ? "true" : "false");
+    if (!state.voiceMode) stopSpeaking();
+    if (!speechSupported && state.voiceMode) {
+      setNoticeOnce("Your browser doesn't support text-to-speech, so voice mode will stay silent — the interviewer's replies will still show as text.");
+    }
+  });
+  function setNoticeOnce(text) {
+    var note = document.createElement("div");
+    note.className = "mic-status";
+    note.textContent = text;
+    el.voiceModeBtn.parentElement.appendChild(note);
+    setTimeout(function () { note.remove(); }, 5000);
+  }
+
   el.composerForm.addEventListener("submit", function (e) {
     e.preventDefault();
     var text = el.composerInput.value.trim();
     if (!text || state.waiting) return;
+    stopSpeaking();
     if (state.prep.active) cancelPrep(false);
     state.turns.push({ role: "candidate", content: text });
     pushDisplay("candidate", text);
@@ -445,6 +535,80 @@
     state.idleNudged = false;
     sendToInterviewer();
   });
+
+  // ---- Voice input (speech-to-text via server-side transcription) ---
+  el.micBtn.addEventListener("click", function () {
+    if (state.recording) stopRecording(); else startRecording();
+  });
+
+  function setMicStatus(text) {
+    if (!text) { el.micStatus.hidden = true; el.micStatus.textContent = ""; return; }
+    el.micStatus.hidden = false;
+    el.micStatus.textContent = text;
+  }
+
+  async function startRecording() {
+    if (state.waiting || state.recording) return;
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      setMicStatus("Voice input isn't supported in this browser — please type instead.");
+      setTimeout(function () { setMicStatus(""); }, 4000);
+      return;
+    }
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      var mimeType = ["audio/webm", "audio/mp4", "audio/ogg"].find(function (t) { return window.MediaRecorder.isTypeSupported && window.MediaRecorder.isTypeSupported(t); }) || "";
+      var recorder = mimeType ? new MediaRecorder(stream, { mimeType: mimeType }) : new MediaRecorder(stream);
+      state.mediaRecorder = recorder;
+      state.audioChunks = [];
+      recorder.addEventListener("dataavailable", function (e) { if (e.data && e.data.size > 0) state.audioChunks.push(e.data); });
+      recorder.addEventListener("stop", function () {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        transcribeRecording(recorder.mimeType || mimeType || "audio/webm");
+      });
+      recorder.start();
+      state.recording = true;
+      el.micBtn.classList.add("recording");
+      setMicStatus("Recording… tap the mic again when you're done.");
+    } catch (e) {
+      setMicStatus("Couldn't access your microphone — check permissions, or just type instead.");
+      setTimeout(function () { setMicStatus(""); }, 5000);
+    }
+  }
+
+  function stopRecording() {
+    if (!state.recording || !state.mediaRecorder) return;
+    state.recording = false;
+    el.micBtn.classList.remove("recording");
+    setMicStatus("Transcribing…");
+    try { state.mediaRecorder.stop(); } catch (e) { /* ignore */ }
+  }
+
+  async function transcribeRecording(mimeType) {
+    var blob = new Blob(state.audioChunks, { type: mimeType });
+    state.audioChunks = [];
+    if (!blob.size) { setMicStatus(""); return; }
+    try {
+      var resp = await fetch("/api/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": mimeType },
+        body: blob
+      });
+      var data = await resp.json().catch(function () { return {}; });
+      if (!resp.ok) {
+        setMicStatus((data && data.message) || "Couldn't transcribe that — try again, or just type it.");
+        setTimeout(function () { setMicStatus(""); }, 4000);
+        return;
+      }
+      var existing = el.composerInput.value;
+      el.composerInput.value = existing ? (existing.replace(/\s+$/, "") + " " + data.text) : data.text;
+      el.composerInput.dispatchEvent(new Event("input"));
+      el.composerInput.focus();
+      setMicStatus("");
+    } catch (e) {
+      setMicStatus("Couldn't reach the server to transcribe — try again, or just type it.");
+      setTimeout(function () { setMicStatus(""); }, 4000);
+    }
+  }
 
   el.composerInput.addEventListener("input", function () {
     el.composerInput.style.height = "auto";
@@ -534,6 +698,8 @@
 
   function endInterview() {
     if (state.currentCtl) state.currentCtl.abort();
+    stopSpeaking();
+    if (state.recording) stopRecording();
     showScreen("eval");
     renderEvalLoading();
     runEvaluation();
