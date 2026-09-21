@@ -92,11 +92,19 @@ function buildSystemPrompt(question) {
 // top of whatever cap your AI Builders account itself enforces).
 // ---------------------------------------------------------------
 const hits = new Map();
-function rateLimited(ip, max, windowMs) {
+function rateLimited(ip, max, windowMs, bucket) {
+  // Keyed by ip plus bucket, not ip alone: /api/chat, /api/transcribe and
+  // /api/evaluate each pass a different max, but a single shared per-IP
+  // counter meant heavy chat traffic silently ate into the much smaller
+  // evaluate budget for the same student -- a normal 40 minute interview
+  // easily sends more than 10 chat messages, which would then block that
+  // students own end of interview evaluate call with a false 429, even
+  // though they never called /api/evaluate more than once.
+  const key = ip + "|" + (bucket || "default");
   const now = Date.now();
-  const arr = (hits.get(ip) || []).filter((t) => now - t < windowMs);
+  const arr = (hits.get(key) || []).filter((t) => now - t < windowMs);
   arr.push(now);
-  hits.set(ip, arr);
+  hits.set(key, arr);
   return arr.length > max;
 }
 
@@ -164,7 +172,7 @@ app.get("/api/questions", (req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   const ip = req.ip;
-  if (rateLimited(ip, 1000 /* TEMP: load-test bypass, revert to 40 after */, 5 * 60 * 1000)) {
+  if (rateLimited(ip, 40, 5 * 60 * 1000, "chat")) {
     return res.status(429).json({ error: "rate_limited", message: "Too many requests — wait a moment and try again." });
   }
   const { questionId, turns } = req.body || {};
@@ -265,7 +273,7 @@ app.post("/api/chat", async (req, res) => {
 
 app.post("/api/transcribe", express.raw({ type: () => true, limit: "20mb" }), async (req, res) => {
   const ip = req.ip;
-  if (rateLimited(ip, 30, 5 * 60 * 1000)) {
+  if (rateLimited(ip, 30, 5 * 60 * 1000, "transcribe")) {
     return res.status(429).json({ error: "rate_limited", message: "Too many requests — wait a moment and try again." });
   }
   if (!req.body || !req.body.length) {
@@ -313,7 +321,7 @@ app.post("/api/transcribe", express.raw({ type: () => true, limit: "20mb" }), as
 
 app.post("/api/evaluate", async (req, res) => {
   const ip = req.ip;
-  if (rateLimited(ip, 500 /* TEMP: load-test bypass, revert to 10 after */, 15 * 60 * 1000)) {
+  if (rateLimited(ip, 10, 15 * 60 * 1000, "evaluate")) {
     return res.status(429).json({ error: "rate_limited", message: "Too many evaluation requests — wait a moment and try again." });
   }
   const { questionId, turns } = req.body || {};
