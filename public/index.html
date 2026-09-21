@@ -258,8 +258,8 @@
   // pop onto screen almost all at once. These control a separate on-screen
   // reveal pace, decoupled from how fast the network actually delivers the
   // text, so it always reads at a comfortable, human pace.
-  var TYPE_TICK_MS = 20;         // how often we reveal more characters
-  var TYPE_CHARS_PER_TICK = 1;   // -> ~50 chars/sec, a brisk reading pace
+  var TYPE_TICK_MS = 1000 / 35;  // ~28.6ms tick, 1 char per tick -> 35 chars/sec
+  var TYPE_CHARS_PER_TICK = 1;   // tuned down from 50 cps after live testing
 
   var el = {
     phaseIndicator: document.getElementById("phaseIndicator"),
