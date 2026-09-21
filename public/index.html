@@ -176,7 +176,8 @@
       <p class="lede">Pick a prompt. An interviewer will run the session — think out loud, ask for a minute whenever you need to structure your thoughts, and get a rubric-based evaluation when you're done.</p>
       <div class="how-it-works">
         <div class="hiw-item"><span class="hiw-num">1</span>This runs on a shared instructor-provided key — no sign-in needed on your end.</div>
-        <div class="hiw-item"><span class="hiw-num">2</span>Nothing is saved on our server after you close the tab — download your evaluation at the end if you want to keep it.</div>
+        <div class="hiw-item"><span class="hiw-num">2</span>Budget 30-40 minutes — the session ends automatically at the 40-minute mark and shows your evaluation.</div>
+        <div class="hiw-item"><span class="hiw-num">3</span>Nothing is saved on our server after you close the tab — download your evaluation at the end if you want to keep it.</div>
       </div>
       <div class="question-grid" id="questionGrid"></div>
       <p class="setup-note" id="capabilityNotice" hidden></p>
@@ -230,8 +231,13 @@
     idleNudged: false,
     lastActivityAt: null,
     waiting: false,
-    currentCtl: null
+    currentCtl: null,
+    timeWarned: false,
+    hardStopped: false
   };
+
+  var TOTAL_LIMIT_MS = 40 * 60 * 1000;
+  var TIME_WARNING_MS = 35 * 60 * 1000; // 5 minutes before the hard stop
 
   var el = {
     phaseIndicator: document.getElementById("phaseIndicator"),
@@ -306,6 +312,8 @@
     state.prep = { active: false, endsAt: 0 };
     state.idleNudged = false;
     state.lastActivityAt = Date.now();
+    state.timeWarned = false;
+    state.hardStopped = false;
 
     el.questionChip.innerHTML = "";
     var b = document.createElement("b");
@@ -495,7 +503,8 @@
 
   setInterval(function () {
     if (state.screen !== "interview" || !state.startedAt) return;
-    el.elapsedValue.textContent = fmtClock(Date.now() - state.startedAt);
+    var elapsed = Date.now() - state.startedAt;
+    el.elapsedValue.textContent = fmtClock(elapsed) + " / 40:00";
     if (state.prep.active) {
       var remaining = state.prep.endsAt - Date.now();
       el.prepTimerWrap.hidden = false;
@@ -508,6 +517,18 @@
         addSystemNote("Still there? Ask for a hint any time, or say if you'd like another minute.",
           "the candidate has been quiet for a few minutes");
       }
+    }
+    if (!state.hardStopped && !state.timeWarned && elapsed >= TIME_WARNING_MS) {
+      state.timeWarned = true;
+      addSystemNote("⏰ 5 minutes left — start wrapping up toward a recommendation.",
+        "5 minutes remain before the 40-minute time limit; the candidate should wrap toward a recommendation now");
+    }
+    if (!state.hardStopped && elapsed >= TOTAL_LIMIT_MS) {
+      state.hardStopped = true;
+      if (state.currentCtl) state.currentCtl.abort();
+      addSystemNote("⏰ Time's up! Wrapping up here — your evaluation is next.",
+        "the 40-minute time limit has been reached; end the interview now regardless of progress");
+      endInterview();
     }
   }, 1000);
 
