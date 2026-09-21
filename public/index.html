@@ -253,6 +253,14 @@
   var TOTAL_LIMIT_MS = 40 * 60 * 1000;
   var TIME_WARNING_MS = 35 * 60 * 1000; // 5 minutes before the hard stop
 
+  // The API can deliver the interviewer's reply in a handful of large SSE
+  // chunks rather than a steady token-by-token trickle, which made the text
+  // pop onto screen almost all at once. These control a separate on-screen
+  // reveal pace, decoupled from how fast the network actually delivers the
+  // text, so it always reads at a comfortable, human pace.
+  var TYPE_TICK_MS = 20;         // how often we reveal more characters
+  var TYPE_CHARS_PER_TICK = 1;   // -> ~50 chars/sec, a brisk reading pace
+
   var el = {
     phaseIndicator: document.getElementById("phaseIndicator"),
     screenSetup: document.getElementById("screenSetup"),
@@ -394,8 +402,34 @@
 
     var ctl = new AbortController();
     state.currentCtl = ctl;
-    var fullText = "";
+    var rawText = "";     // everything received from the network so far
+    var revealed = "";    // what's currently shown on screen
     var sawError = null;
+    var revealTimer = null;
+
+    function stopRevealer() {
+      if (revealTimer) { clearInterval(revealTimer); revealTimer = null; }
+    }
+    function startRevealer() {
+      if (revealTimer) return;
+      revealTimer = setInterval(function () {
+        if (revealed.length < rawText.length) {
+          revealed = rawText.slice(0, Math.min(revealed.length + TYPE_CHARS_PER_TICK, rawText.length));
+          pendingEntry.pending = false;
+          pendingEntry.text = revealed;
+          renderTranscript();
+        }
+      }, TYPE_TICK_MS);
+    }
+    function waitForRevealToCatchUp() {
+      return new Promise(function (resolve) {
+        (function check() {
+          if (revealed.length >= rawText.length) { resolve(); return; }
+          setTimeout(check, TYPE_TICK_MS);
+        })();
+      });
+    }
+
     try {
       var resp = await fetch("/api/chat", {
         method: "POST",
@@ -429,19 +463,26 @@
           try { obj = JSON.parse(payload); } catch (e) { continue; }
           if (obj.error) { sawError = obj; break readLoop; }
           if (obj.delta) {
-            pendingEntry.pending = false;
-            fullText += obj.delta;
-            pendingEntry.text = fullText;
-            renderTranscript();
+            rawText += obj.delta;
+            startRevealer();
           }
         }
       }
 
-      if (sawError) { handleApiError(sawError, pendingEntry); return; }
-      if (!fullText) { handleApiError({ message: "No reply came back. Try again." }, pendingEntry); return; }
-      state.turns.push({ role: "interviewer", content: fullText });
-      if (state.voiceMode) speakText(fullText);
+      if (sawError) { stopRevealer(); handleApiError(sawError, pendingEntry); return; }
+      if (!rawText) { stopRevealer(); handleApiError({ message: "No reply came back. Try again." }, pendingEntry); return; }
+
+      // Let the on-screen reveal finish catching up to the received text
+      // before finalizing the turn, so the composer stays disabled and the
+      // transcript keeps "typing" for the rest of the reply instead of
+      // jumping straight to the fully-received text.
+      await waitForRevealToCatchUp();
+      stopRevealer();
+
+      state.turns.push({ role: "interviewer", content: rawText });
+      if (state.voiceMode) speakText(rawText);
     } catch (e) {
+      stopRevealer();
       if (e.name === "AbortError") {
         state.display.splice(state.display.indexOf(pendingEntry), 1);
         renderTranscript();
