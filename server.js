@@ -197,8 +197,13 @@ app.post("/api/chat", async (req, res) => {
   res.setHeader("X-Accel-Buffering", "no"); // disable nginx-style proxy buffering of the stream
   if (res.flushHeaders) res.flushHeaders();
 
+  // Note: deliberately NOT wiring req.on("close") to abort the upstream call.
+  // Behind this app's reverse proxy, that "close" event was firing well under
+  // a second into the request — long before any real client disconnect could
+  // happen — which self-aborted every single streamed reply. The 60s timeout
+  // below is the only abort trigger now; worst case a closed tab lets one
+  // upstream call finish unread, which is a non-issue at this traffic scale.
   const controller = new AbortController();
-  req.on("close", () => controller.abort());
   const timeout = setTimeout(() => controller.abort(), 60000);
 
   function sendSseError(kind, message) {
