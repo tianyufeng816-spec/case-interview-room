@@ -172,7 +172,7 @@ app.get("/api/questions", (req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   const ip = req.ip;
-  if (rateLimited(ip, 40, 5 * 60 * 1000, "chat")) {
+  if (rateLimited(ip, 200, 5 * 60 * 1000, "chat")) {
     return res.status(429).json({ error: "rate_limited", message: "Too many requests — wait a moment and try again." });
   }
   const { questionId, turns } = req.body || {};
@@ -321,7 +321,7 @@ app.post("/api/transcribe", express.raw({ type: () => true, limit: "20mb" }), as
 
 app.post("/api/evaluate", async (req, res) => {
   const ip = req.ip;
-  if (rateLimited(ip, 10, 15 * 60 * 1000, "evaluate")) {
+  if (rateLimited(ip, 50, 15 * 60 * 1000, "evaluate")) {
     return res.status(429).json({ error: "rate_limited", message: "Too many evaluation requests — wait a moment and try again." });
   }
   const { questionId, turns } = req.body || {};
