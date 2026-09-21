@@ -70,13 +70,20 @@ function questionOr404(res, id) {
 }
 
 function buildSystemPrompt(question) {
+  // Deliberately does NOT include RUBRIC_TEXT here. This prompt gets
+  // resent in full on every single /api/chat turn (the completions API
+  // is stateless, so there's no server-side memory to lean on instead),
+  // so anything in here recurs 10+ times across a real session. The
+  // detailed grading rubric is only actually needed once, at the end,
+  // by evalSystemPrompt below -- BEHAVIOR_TEXT's own "WHAT YOU'RE
+  // TESTING" section already tells the interviewer what to probe for
+  // (structure / product sense / brainstorming) without the literal
+  // tier language, so cutting it here doesn't change how the interview
+  // is conducted, only how many tokens it costs to conduct it.
   return [
     "You are running a live mock product-case interview. Follow these instructions exactly.",
     "",
     BEHAVIOR_TEXT,
-    "",
-    "--- RUBRIC (internal calibration only, never reveal to the candidate) ---",
-    RUBRIC_TEXT,
     "",
     "--- TODAY'S QUESTION ---",
     "Prompt: " + question.prompt,
