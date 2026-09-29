@@ -104,6 +104,8 @@
   .btn-mic.recording { background: var(--bad); color: #fff; border-color: var(--bad); animation: mic-pulse 1.4s ease-in-out infinite; }
   @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(177, 74, 56, 0.45); } 50% { box-shadow: 0 0 0 8px rgba(177, 74, 56, 0); } }
   .mic-status { font-size: 0.78rem; color: var(--text-muted); padding: 0 20px 8px; font-family: var(--font-mono); }
+  .composer-hint { font-size: 0.78rem; color: var(--text-muted); padding: 0 20px 6px; margin: 0; }
+  .composer-hint strong { color: var(--text); }
   @media (prefers-reduced-motion: reduce) { .btn-mic.recording { animation: none; } }
 
   .interview-subbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 12px 20px; border-bottom: 1px solid var(--border); background: var(--surface); position: relative; z-index: 10; }
@@ -184,7 +186,8 @@
       <div class="how-it-works">
         <div class="hiw-item"><span class="hiw-num">1</span>This runs on a shared instructor-provided key — no sign-in needed on your end.</div>
         <div class="hiw-item"><span class="hiw-num">2</span>Budget 30-40 minutes — the session ends automatically at the 40-minute mark and shows your evaluation.</div>
-        <div class="hiw-item"><span class="hiw-num">3</span>Nothing is saved on our server after you close the tab — download your evaluation at the end if you want to keep it.</div>
+        <div class="hiw-item"><span class="hiw-num">3</span>Done early? Click "End &amp; get feedback" at the top of the interview screen — your evaluation doesn't appear on its own.</div>
+        <div class="hiw-item"><span class="hiw-num">4</span>Nothing is saved on our server after you close the tab — download your evaluation at the end if you want to keep it.</div>
       </div>
       <div class="question-grid" id="questionGrid"></div>
       <p class="setup-note" id="capabilityNotice" hidden></p>
@@ -201,11 +204,12 @@
       <div class="subbar-actions">
         <button class="btn btn-ghost btn-small" id="voiceModeBtn" type="button" aria-pressed="false" title="Have the interviewer speak replies aloud">🔇 Voice mode</button>
         <button class="btn btn-ghost btn-small" id="thinkBtn" type="button">I need a minute</button>
-        <button class="btn btn-end btn-small" id="endBtn" type="button">End interview</button>
+        <button class="btn btn-end btn-small" id="endBtn" type="button">End &amp; get feedback</button>
       </div>
     </div>
     <div class="transcript" id="transcript"></div>
     <p class="mic-status" id="micStatus" hidden></p>
+    <p class="composer-hint">Your evaluation isn't automatic — click <strong>"End &amp; get feedback"</strong> above whenever you're ready for it.</p>
     <form class="composer" id="composerForm">
       <button class="btn btn-ghost btn-mic" id="micBtn" type="button" title="Record your answer">🎙️</button>
       <textarea id="composerInput" placeholder="Type your response, or tap the mic to speak it…" rows="1"></textarea>
