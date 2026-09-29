@@ -593,6 +593,31 @@
     el.micStatus.textContent = text;
   }
 
+  // Used when a transcription attempt fails: keeps the already-recorded
+  // audio around and offers a one-click retry on the SAME recording,
+  // instead of just showing an error and discarding it -- previously a
+  // failed transcribe (e.g. a timeout on a longer answer) silently threw
+  // away everything the candidate had just said, forcing a full re-record.
+  function setMicStatusWithRetry(message, mimeType, blob) {
+    el.micStatus.hidden = false;
+    el.micStatus.textContent = "";
+    var span = document.createElement("span");
+    span.textContent = message + " Your recording is still here — ";
+    el.micStatus.appendChild(span);
+    var retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "btn-link";
+    retry.textContent = "retry";
+    retry.addEventListener("click", function () {
+      setMicStatus("Transcribing…");
+      transcribeRecording(mimeType, blob);
+    });
+    el.micStatus.appendChild(retry);
+    var tail = document.createElement("span");
+    tail.textContent = " or just type it.";
+    el.micStatus.appendChild(tail);
+  }
+
   async function startRecording() {
     if (state.waiting || state.recording) return;
     if (!navigator.mediaDevices || !window.MediaRecorder) {
@@ -629,10 +654,11 @@
     try { state.mediaRecorder.stop(); } catch (e) { /* ignore */ }
   }
 
-  async function transcribeRecording(mimeType) {
-    var blob = new Blob(state.audioChunks, { type: mimeType });
+  async function transcribeRecording(mimeType, blobOverride) {
+    var blob = blobOverride || new Blob(state.audioChunks, { type: mimeType });
     state.audioChunks = [];
     if (!blob.size) { setMicStatus(""); return; }
+    setMicStatus("Transcribing…");
     try {
       var resp = await fetch("/api/transcribe", {
         method: "POST",
@@ -641,8 +667,7 @@
       });
       var data = await resp.json().catch(function () { return {}; });
       if (!resp.ok) {
-        setMicStatus((data && data.message) || "Couldn't transcribe that — try again, or just type it.");
-        setTimeout(function () { setMicStatus(""); }, 4000);
+        setMicStatusWithRetry((data && data.message) || "Couldn't transcribe that.", mimeType, blob);
         return;
       }
       var existing = el.composerInput.value;
@@ -651,8 +676,7 @@
       el.composerInput.focus();
       setMicStatus("");
     } catch (e) {
-      setMicStatus("Couldn't reach the server to transcribe — try again, or just type it.");
-      setTimeout(function () { setMicStatus(""); }, 4000);
+      setMicStatusWithRetry("Couldn't reach the server to transcribe.", mimeType, blob);
     }
   }
 

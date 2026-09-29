@@ -294,7 +294,14 @@ app.post("/api/transcribe", express.raw({ type: () => true, limit: "20mb" }), as
     form.append("audio_file", blob, "recording." + ext);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    // Was 30s, the tightest budget of any endpoint despite transcription
+    // being the one most likely to need more time -- upload + upstream
+    // processing time scales with how long the candidate talked, and a
+    // long spoken answer (very plausible here: candidates think out loud)
+    // could easily blow past 30s even before factoring in upstream queueing
+    // under concurrent classroom load. Matched to /api/chat and
+    // /api/evaluate's own 60s budget for consistency.
+    const timeout = setTimeout(() => controller.abort(), 60000);
     let resp;
     try {
       resp = await fetch(API_BASE + "/v1/audio/transcriptions", {
