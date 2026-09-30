@@ -231,7 +231,12 @@ app.post("/api/chat", async (req, res) => {
     const upstream = await fetch(API_BASE + "/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: "Bearer " + AI_BUILDER_TOKEN },
-      body: JSON.stringify({ model: MODEL, messages: messages, temperature: 0.8, max_tokens: 350, stream: true }),
+      // max_tokens raised from 350: BEHAVIOR_TEXT already instructs 2-5
+      // sentence turns, which normally finish well under 350, but a longer
+      // synthesis turn occasionally exceeded it and got hard-truncated
+      // mid-sentence (observed in a 10-student test round). This only
+      // raises the ceiling, not the target, so typical turns are unaffected.
+      body: JSON.stringify({ model: MODEL, messages: messages, temperature: 0.8, max_tokens: 600, stream: true }),
       signal: controller.signal
     });
 

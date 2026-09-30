@@ -97,6 +97,8 @@
   .btn-ghost:hover:not(:disabled) { border-color: var(--teal); color: var(--teal); }
   .btn-end { background: transparent; color: var(--bad); border-color: var(--border); }
   .btn-end:hover:not(:disabled) { border-color: var(--bad); }
+  .end-confirm { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .end-confirm-text { font-size: 0.8rem; color: var(--text-muted); }
   .btn-small { font-size: 0.78rem; padding: 5px 10px; border-radius: 7px; }
   .btn-link { background: none; border: none; color: var(--teal); font-weight: 600; cursor: pointer; padding: 0; font-size: 0.85rem; }
   .btn-toggle-on { background: var(--teal); color: #fff; border-color: var(--teal); }
@@ -122,6 +124,7 @@
   .think-menu { position: absolute; top: calc(100% + 6px); right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 6px; display: flex; flex-direction: column; gap: 4px; min-width: 150px; box-shadow: 0 8px 24px rgba(10, 16, 30, 0.16); z-index: 30; }
   .think-menu button { background: none; border: none; text-align: left; padding: 8px 10px; border-radius: 7px; font-size: 0.86rem; color: var(--text); cursor: pointer; font-family: var(--font-body); }
   .think-menu button:hover { background: var(--surface-2); }
+  .think-menu-note { font-size: 0.74rem; color: var(--text-muted); padding: 4px 10px 6px; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
 
   .transcript { flex: 1; overflow-y: auto; padding: 22px 20px; display: flex; flex-direction: column; gap: 14px; }
   .msg { display: flex; }
@@ -205,6 +208,11 @@
         <button class="btn btn-ghost btn-small" id="voiceModeBtn" type="button" aria-pressed="false" title="Have the interviewer speak replies aloud">🔇 Voice mode</button>
         <button class="btn btn-ghost btn-small" id="thinkBtn" type="button">I need a minute</button>
         <button class="btn btn-end btn-small" id="endBtn" type="button">End &amp; get feedback</button>
+        <span class="end-confirm" id="endConfirm" hidden>
+          <span class="end-confirm-text">End now and see your evaluation?</span>
+          <button class="btn btn-end btn-small" id="endConfirmYes" type="button">Yes, end it</button>
+          <button class="btn btn-ghost btn-small" id="endConfirmNo" type="button">Keep going</button>
+        </span>
       </div>
     </div>
     <div class="transcript" id="transcript"></div>
@@ -278,6 +286,9 @@
     prepValue: document.getElementById("prepValue"),
     thinkBtn: document.getElementById("thinkBtn"),
     endBtn: document.getElementById("endBtn"),
+    endConfirm: document.getElementById("endConfirm"),
+    endConfirmYes: document.getElementById("endConfirmYes"),
+    endConfirmNo: document.getElementById("endConfirmNo"),
     voiceModeBtn: document.getElementById("voiceModeBtn"),
     micBtn: document.getElementById("micBtn"),
     micStatus: document.getElementById("micStatus"),
@@ -381,7 +392,7 @@
         bubble.appendChild(role);
       }
       var textNode = document.createElement("span");
-      if (m.pending) { textNode.className = "thinking-dots"; textNode.textContent = "Thinking"; }
+      if (m.pending) { textNode.className = "thinking-dots"; textNode.textContent = m.longWait ? "Still thinking (can take a bit longer sometimes)" : "Thinking"; }
       else { textNode.textContent = m.text; }
       bubble.appendChild(textNode);
       row.appendChild(bubble);
@@ -403,6 +414,13 @@
     var pendingEntry = { who: "interviewer", text: "", id: state.display.length, pending: true };
     state.display.push(pendingEntry);
     renderTranscript();
+
+    // The real backend can queue under concurrent classroom load (measured
+    // up to ~20s+ median at high concurrency) -- surface a reassurance after
+    // 15s of silence so a slow reply doesn't read as a frozen page.
+    var longWaitTimer = setTimeout(function () {
+      if (!rawText) { pendingEntry.longWait = true; renderTranscript(); }
+    }, 15000);
 
     var ctl = new AbortController();
     state.currentCtl = ctl;
@@ -494,6 +512,7 @@
         handleApiError({ error: "network_error", message: "Couldn't reach the server. Check your connection and retry." }, pendingEntry);
       }
     } finally {
+      clearTimeout(longWaitTimer);
       setWaiting(false);
       state.currentCtl = null;
     }
@@ -694,6 +713,10 @@
     if (thinkMenuEl) { closeThinkMenu(); return; }
     thinkMenuEl = document.createElement("div");
     thinkMenuEl.className = "think-menu";
+    var note = document.createElement("div");
+    note.className = "think-menu-note";
+    note.textContent = "Still counts toward your 40 minutes.";
+    thinkMenuEl.appendChild(note);
     [["2 minutes", 2], ["3 minutes", 3]].forEach(function (opt) {
       var b = document.createElement("button");
       b.type = "button"; b.textContent = opt[0] + " to think";
@@ -708,7 +731,7 @@
 
   function startPrep(minutes) {
     state.prep = { active: true, endsAt: Date.now() + minutes * 60 * 1000 };
-    addSystemNote("⏱️ Taking " + minutes + " minute" + (minutes > 1 ? "s" : "") + " to think.",
+    addSystemNote("⏱️ Taking " + minutes + " minute" + (minutes > 1 ? "s" : "") + " to think — this still counts toward your 40 minutes.",
       "candidate requested " + minutes + " minutes to think before responding");
     updateThinkBtn();
   }
@@ -727,12 +750,23 @@
   }
   function updateThinkBtn() { el.thinkBtn.textContent = state.prep.active ? "I'm ready" : "I need a minute"; }
 
+  // Was a click-twice-within-3-seconds arm/confirm that expired silently and
+  // was found unreliable across nearly every session of a 10-student test
+  // round (two separate clicks frequently did nothing; only a true native
+  // double-click worked). Replaced with a plain inline confirm that has no
+  // timer and no silent revert -- it just waits for an explicit answer.
   el.endBtn.addEventListener("click", function () {
-    if (el.endBtn.dataset.armed === "1") { endInterview(); return; }
-    el.endBtn.dataset.armed = "1";
-    var original = el.endBtn.textContent;
-    el.endBtn.textContent = "Click again to end";
-    setTimeout(function () { if (el.endBtn) { el.endBtn.dataset.armed = "0"; el.endBtn.textContent = original; } }, 3000);
+    el.endBtn.hidden = true;
+    el.endConfirm.hidden = false;
+  });
+  el.endConfirmYes.addEventListener("click", function () {
+    el.endConfirm.hidden = true;
+    el.endBtn.hidden = false;
+    endInterview();
+  });
+  el.endConfirmNo.addEventListener("click", function () {
+    el.endConfirm.hidden = true;
+    el.endBtn.hidden = false;
   });
 
   setInterval(function () {
