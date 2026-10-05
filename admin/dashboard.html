@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock interview — live dashboard</title>
+<style>
+  :root {
+    --navy: #1D2E4A; --teal: #2F6F76; --amber: #C97F16; --good: #2F7A55; --critical: #B14A38;
+    --ink: #1B2430; --muted: #5B6472; --line: #E3E7EC; --bg: #F4F6F9; --card: #FFFFFF;
+    --serif: Cambria, Georgia, "Times New Roman", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 20px 20px 60px; }
+  header { display: flex; flex-wrap: wrap; gap: 10px 20px; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--teal); margin: 0 0 4px; }
+  h1 { font-family: var(--serif); font-size: 26px; margin: 0; color: var(--navy); }
+  .meta { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); display: inline-block; margin-right: 6px; }
+  .dot.stale { background: var(--critical); }
+  button { font: inherit; font-size: 13px; font-weight: 600; border-radius: 9px; padding: 7px 12px; cursor: pointer; border: 1px solid var(--line); background: #fff; color: var(--navy); }
+  button:hover { border-color: #C3CBD5; }
+  button.primary { background: var(--teal); border-color: var(--teal); color: #fff; }
+  button.danger { color: var(--critical); border-color: #E7CFCA; }
+  .banner { border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; font-size: 14px; display: flex; gap: 10px; align-items: center; }
+  .banner.ok { background: #E8F3ED; color: #1F5A3C; }
+  .banner.warn { background: #FBF3E6; color: #7A4B0A; }
+  .banner.bad { background: #FBEDEA; color: #7E2D1E; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+  .tile .v { font-family: var(--serif); font-size: 32px; font-weight: 700; line-height: 1; color: var(--navy); }
+  .tile .v.small { font-size: 24px; }
+  .tile .k { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .tile.alert .v { color: var(--critical); }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+  .cols > * { min-width: 0; }
+  @media (max-width: 1080px) { .cols { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .card h2 { font-family: var(--serif); font-size: 17px; margin: 0 0 12px; color: var(--navy); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .chip { font-size: 12.5px; font-weight: 600; border-radius: 999px; padding: 5px 11px; border: 1px solid var(--line); background: #fff; color: var(--muted); cursor: pointer; }
+  .chip.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+  input[type=search] { font: inherit; font-size: 13px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; min-width: 160px; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 700; padding: 0 10px 8px; }
+  td { padding: 10px; border-top: 1px solid var(--line); vertical-align: top; }
+  tr.row { cursor: pointer; }
+  tr.row:hover td { background: #FAFBFC; }
+  .who { font-weight: 700; color: var(--navy); }
+  .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 4px 9px; }
+  .state.live { background: #E8F3ED; color: #1F5A3C; }
+  .state.idle { background: #EFF1F4; color: #5B6472; }
+  .state.done { background: #E7EEF5; color: #24456E; }
+  .state.bad { background: #FBEDEA; color: #7E2D1E; }
+  .state.warn { background: #FBF3E6; color: #7A4B0A; }
+  .num { font-variant-numeric: tabular-nums; }
+  .detail td { background: #FAFBFC; }
+  .detail h3 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
+  .detail .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .detail ul { margin: 0; padding-left: 18px; }
+  .detail li { margin-bottom: 4px; }
+  .bars { display: flex; flex-direction: column; gap: 7px; }
+  .bar-row { display: grid; grid-template-columns: 130px 1fr 28px; gap: 8px; align-items: center; font-size: 12.5px; }
+  .bar-track { display: block; background: #EDF0F4; border-radius: 4px; height: 10px; overflow: hidden; }
+  .bar-fill { display: block; height: 100%; background: var(--teal); border-radius: 4px; min-width: 2px; }
+  .feed { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
+  .ev { border: 1px solid #EEDFC2; background: #FDF8EF; border-radius: 10px; padding: 9px 11px; font-size: 12.5px; }
+  .ev.sev { border-color: #E7CFCA; background: #FBEDEA; }
+  .ev .top { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; color: var(--navy); }
+  .ev .msg { color: #5B4327; margin-top: 4px; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
+  .ev.sev .msg { color: #7E2D1E; }
+  .empty { color: var(--muted); font-size: 13px; padding: 14px 0; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; background: #EFF1F4; padding: 1px 5px; border-radius: 5px; word-break: break-all; }
+  .hint, .ev, .card { overflow-wrap: anywhere; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Case Interview Room</p>
+      <h1>Live session dashboard</h1>
+    </div>
+    <div class="meta">
+      <span id="liveDot"><span class="dot" id="dot"></span><span id="updated">connecting…</span></span>
+      <button id="pauseBtn" type="button">Pause</button>
+      <button id="dlBtn" type="button">Download snapshot</button>
+      <button id="copyBtn" type="button">Copy debug JSON</button>
+      <button id="resetBtn" class="danger" type="button">Reset data</button>
+    </div>
+  </header>
+
+  <div class="banner ok" id="banner">Waiting for the first session…</div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="cols">
+    <div class="card">
+      <h2>Students</h2>
+      <div class="toolbar">
+        <button class="chip on" data-filter="all" type="button">All</button>
+        <button class="chip" data-filter="live" type="button">Live</button>
+        <button class="chip" data-filter="attention" type="button">Needs attention</button>
+        <button class="chip" data-filter="evaluated" type="button">Evaluated</button>
+        <input type="search" id="search" placeholder="Search name…" autocomplete="off">
+      </div>
+      <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Student</th><th>Question</th><th>Status</th><th>Turns</th><th>Elapsed</th><th>Reply time</th><th>Result</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      </div>
+      <div class="empty" id="emptyRows">No sessions yet. Rows appear as soon as a student sends their first message.</div>
+      <p class="hint">Click any row for the full evaluation summary and that student's errors. Elapsed is first message to last activity.</p>
+    </div>
+
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <h2>Problems <span id="probCount" class="sub"></span></h2>
+        <div class="feed" id="feed"></div>
+        <div class="empty" id="emptyFeed">No errors yet.</div>
+        <p class="hint">"Copy debug JSON" puts every error plus the affected sessions on your clipboard — paste it straight to your debugging agent. It's also at <code>/api/admin/metrics?key=…&amp;errorsOnly=1</code>.</p>
+      </div>
+
+      <div class="card">
+        <h2>Results so far</h2>
+        <div class="bars" id="tiers"></div>
+        <div class="empty" id="emptyTiers">No evaluations finished yet.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var KEY = new URLSearchParams(location.search).get("key") || "";
+  var el = function (id) { return document.getElementById(id); };
+  var state = { data: null, filter: "all", search: "", open: {}, paused: false, failures: 0 };
+
+  var TIER_ORDER = ["Extremely Good", "Good", "OK", "Needs Improvement", "Hard No"];
+
+  function fmtClock(ms) {
+    if (ms == null || !isFinite(ms)) return "–";
+    var s = Math.max(0, Math.round(ms / 1000));
+    var m = Math.floor(s / 60);
+    var r = s % 60;
+    return m + ":" + String(r).padStart(2, "0");
+  }
+  function fmtSecs(ms) {
+    if (ms == null || !isFinite(ms)) return "–";
+    return (ms / 1000).toFixed(1) + "s";
+  }
+  function fmtAgo(ts, now) {
+    var d = Math.max(0, now - ts);
+    if (d < 60000) return Math.round(d / 1000) + "s ago";
+    if (d < 3600000) return Math.round(d / 60000) + "m ago";
+    return Math.round(d / 3600000) + "h ago";
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function statusChip(s) {
+    if (s.status === "evaluated") return '<span class="state done">Evaluated</span>';
+    if (s.status === "eval_failed") return '<span class="state bad">Evaluation failed</span>';
+    if (s.status === "active_with_errors") return '<span class="state warn">Live · errors</span>';
+    if (s.status === "idle") return '<span class="state idle">Idle</span>';
+    return '<span class="state live">Live</span>';
+  }
+
+  function tiles(d) {
+    var lat = d.latency && d.latency.last10min && d.latency.last10min.count ? d.latency.last10min : (d.latency ? d.latency.allTime : null);
+    var items = [
+      { v: d.totals.live, k: "live right now" },
+      { v: d.totals.sessions, k: "students started" },
+      { v: d.totals.evaluated, k: "evaluations done" },
+      { v: d.totals.chatCalls, k: "interviewer replies" },
+      { v: fmtSecs(lat && lat.median), k: "median reply time", small: true },
+      { v: fmtSecs(lat && lat.p95), k: "95th percentile", small: true },
+      { v: d.errorCount15min, k: "errors (last 15 min)", alert: d.errorCount15min > 0 }
+    ];
+    el("tiles").innerHTML = items.map(function (t) {
+      return '<div class="tile' + (t.alert ? " alert" : "") + '"><div class="v' + (t.small ? " small" : "") + '">' + esc(t.v) + '</div><div class="k">' + esc(t.k) + "</div></div>";
+    }).join("");
+  }
+
+  function banner(d) {
+    var b = el("banner");
+    var lat = d.latency && d.latency.last10min && d.latency.last10min.count ? d.latency.last10min : null;
+    var slow = lat && lat.p95 != null && lat.p95 > 45000;
+    var failing = d.totals.withErrors;
+    if (failing > 0) {
+      b.className = "banner bad";
+      b.textContent = failing + (failing === 1 ? " student has" : " students have") + " hit an error — see Problems on the right, or click their row.";
+    } else if (slow) {
+      b.className = "banner warn";
+      b.textContent = "Replies are slow right now (95th percentile " + fmtSecs(lat.p95) + "). The backend queues under load — students will see a 'still thinking' note.";
+    } else if (d.totals.sessions === 0) {
+      b.className = "banner ok";
+      b.textContent = "Waiting for the first session…";
+    } else {
+      b.className = "banner ok";
+      b.textContent = "All good — " + d.totals.live + " live, " + d.totals.evaluated + " evaluated, no errors in the last 15 minutes.";
+    }
+  }
+
+  function matches(s) {
+    if (state.search && !(s.name || "").toLowerCase().includes(state.search)) return false;
+    if (state.filter === "live") return s.status === "active" || s.status === "active_with_errors";
+    if (state.filter === "attention") return s.chatErrors > 0 || !!s.evalError || s.status === "eval_failed";
+    if (state.filter === "evaluated") return !!s.evaluation;
+    return true;
+  }
+
+  function rowDetail(s) {
+    var ev = s.evaluation;
+    var parts = [];
+    if (ev) {
+      parts.push('<div><h3>Evaluation</h3><p style="margin:0 0 8px"><b>' + esc(ev.tier) + "</b> — " + esc(ev.rationale) + "</p>" +
+        (ev.dimensions || []).map(function (d) { return '<div class="sub">' + esc(d.name) + ": <b>" + esc(d.tier) + "</b></div>"; }).join("") + "</div>");
+      if ((ev.strengths || []).length) parts.push("<div><h3>Strengths</h3><ul>" + ev.strengths.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>");
+      if ((ev.improvements || []).length) parts.push("<div><h3>To improve</h3><ul>" + ev.improvements.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>");
+    } else {
+      parts.push("<div><h3>Evaluation</h3><p class=\"sub\" style=\"margin:0\">Not finished yet — appears when the student clicks “End &amp; get feedback”.</p></div>");
+    }
+    var errs = (s.errors || []).slice().reverse();
+    if (errs.length) {
+      parts.push('<div><h3>Errors</h3>' + errs.map(function (e) {
+        return '<div class="sub"><b>' + esc(e.endpoint) + " · " + esc(e.kind) + "</b> — " + esc(e.message || "") + "</div>";
+      }).join("") + "</div>");
+    }
+    parts.push('<div><h3>Debug</h3><div class="sub">session <code>' + esc(s.id) + "</code></div>" +
+      '<div class="sub">replies: ' + s.chatCalls + " · chat errors: " + s.chatErrors + "</div>" +
+      '<div class="sub">reply time median ' + fmtSecs(s.latency && s.latency.median) + " · p95 " + fmtSecs(s.latency && s.latency.p95) + "</div>" +
+      (s.evalMs ? '<div class="sub">evaluation took ' + fmtSecs(s.evalMs) + "</div>" : "") + "</div>");
+    return '<tr class="detail"><td colspan="7"><div class="grid">' + parts.join("") + "</div></td></tr>";
+  }
+
+  function rows(d) {
+    var list = d.sessions.filter(matches);
+    el("emptyRows").hidden = list.length > 0;
+    el("rows").innerHTML = list.map(function (s) {
+      var tier = s.evaluation ? esc(s.evaluation.tier) : (s.evalError ? "failed" : "—");
+      var html = '<tr class="row" data-id="' + esc(s.id) + '">' +
+        "<td><div class=\"who\">" + esc(s.name || "(no name)") + '</div><div class="sub">last seen ' + fmtAgo(s.lastSeenAt, d.now) + "</div></td>" +
+        "<td>" + esc(s.questionTitle || s.questionId || "—") + "</td>" +
+        "<td>" + statusChip(s) + "</td>" +
+        '<td class="num">' + s.candidateTurns + "</td>" +
+        '<td class="num">' + fmtClock(s.elapsedMs) + "</td>" +
+        '<td class="num">' + fmtSecs(s.latency && s.latency.median) + '<div class="sub">p95 ' + fmtSecs(s.latency && s.latency.p95) + "</div></td>" +
+        "<td>" + tier + "</td></tr>";
+      if (state.open[s.id]) html += rowDetail(s);
+      return html;
+    }).join("");
+  }
+
+  function feed(d) {
+    var errs = (d.errors || []).slice().reverse();
+    el("emptyFeed").hidden = errs.length > 0;
+    el("probCount").textContent = errs.length ? "(" + errs.length + ")" : "";
+    el("feed").innerHTML = errs.map(function (e) {
+      var severe = e.kind === "upstream_error" || e.kind === "timeout" || e.kind === "rate_limited";
+      return '<div class="ev' + (severe ? " sev" : "") + '"><div class="top"><span>' + esc(e.name || "(no name)") + " · " + esc(e.endpoint) + "/" + esc(e.kind) +
+        "</span><span>" + fmtAgo(e.at, d.now) + '</span></div><div class="msg">' + esc(e.message || "") + "</div></div>";
+    }).join("");
+  }
+
+  function tiers(d) {
+    var counts = d.tierCounts || {};
+    var total = Object.keys(counts).reduce(function (a, k) { return a + counts[k]; }, 0);
+    el("emptyTiers").hidden = total > 0;
+    var max = Math.max.apply(null, [1].concat(Object.keys(counts).map(function (k) { return counts[k]; })));
+    el("tiers").innerHTML = TIER_ORDER.map(function (t) {
+      var n = counts[t] || 0;
+      return '<div class="bar-row"><span>' + esc(t) + '</span><span class="bar-track"><span class="bar-fill" style="width:' + Math.round((n / max) * 100) + '%"></span></span><span class="num">' + n + "</span></div>";
+    }).join("");
+  }
+
+  function render(d) {
+    state.data = d;
+    tiles(d); banner(d); rows(d); feed(d); tiers(d);
+    el("updated").textContent = "updated " + new Date(d.now).toLocaleTimeString();
+    el("dot").className = "dot";
+  }
+
+  async function refresh() {
+    if (state.paused) return;
+    try {
+      var r = await fetch("/api/admin/metrics?key=" + encodeURIComponent(KEY), { cache: "no-store" });
+      if (!r.ok) throw new Error("http " + r.status);
+      render(await r.json());
+      state.failures = 0;
+    } catch (e) {
+      state.failures++;
+      el("dot").className = "dot stale";
+      el("updated").textContent = state.failures > 2 ? "can't reach the server" : "retrying…";
+    }
+  }
+
+  document.addEventListener("click", function (e) {
+    var chip = e.target.closest(".chip");
+    if (chip) {
+      state.filter = chip.getAttribute("data-filter");
+      document.querySelectorAll(".chip").forEach(function (c) { c.classList.toggle("on", c === chip); });
+      if (state.data) rows(state.data);
+      return;
+    }
+    var row = e.target.closest("tr.row");
+    if (row) {
+      var id = row.getAttribute("data-id");
+      state.open[id] = !state.open[id];
+      if (state.data) rows(state.data);
+    }
+  });
+
+  el("search").addEventListener("input", function (e) {
+    state.search = e.target.value.trim().toLowerCase();
+    if (state.data) rows(state.data);
+  });
+
+  el("pauseBtn").addEventListener("click", function () {
+    state.paused = !state.paused;
+    el("pauseBtn").textContent = state.paused ? "Resume" : "Pause";
+    if (!state.paused) refresh();
+  });
+
+  el("dlBtn").addEventListener("click", function () {
+    if (!state.data) return;
+    var blob = new Blob([JSON.stringify(state.data, null, 2)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "interview-dashboard-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-") + ".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  });
+
+  el("copyBtn").addEventListener("click", async function () {
+    try {
+      var r = await fetch("/api/admin/metrics?errorsOnly=1&key=" + encodeURIComponent(KEY), { cache: "no-store" });
+      var txt = JSON.stringify(await r.json(), null, 2);
+      await navigator.clipboard.writeText(txt);
+      el("copyBtn").textContent = "Copied";
+    } catch (e) {
+      el("copyBtn").textContent = "Copy failed";
+    }
+    setTimeout(function () { el("copyBtn").textContent = "Copy debug JSON"; }, 2000);
+  });
+
+  var resetArmed = false;
+  el("resetBtn").addEventListener("click", async function () {
+    if (!resetArmed) {
+      resetArmed = true;
+      el("resetBtn").textContent = "Click again to clear";
+      return;
+    }
+    resetArmed = false;
+    el("resetBtn").textContent = "Reset data";
+    await fetch("/api/admin/reset?key=" + encodeURIComponent(KEY), { method: "POST" });
+    refresh();
+  });
+
+  refresh();
+  setInterval(refresh, 5000);
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) refresh(); });
+})();
+</script>
+</body>
+</html>

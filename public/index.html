@@ -173,6 +173,12 @@
   :root[data-theme="dark"] .banner.error { background: #3A1E17; color: #F0B7A6; }
   ::selection { background: var(--amber-soft); }
   @media (prefers-reduced-motion: reduce) { .spinner, .thinking-dots::after { animation: none; } }
+
+    .name-row { display: flex; flex-direction: column; gap: 6px; margin: 0 0 20px; }
+    .name-row label { font-size: 13px; font-weight: 600; letter-spacing: .02em; color: #5B6472; }
+    .name-row input { font: inherit; font-size: 15px; padding: 11px 13px; border: 1px solid #D9DEE5; border-radius: 10px; background: #fff; max-width: 420px; color: inherit; }
+    .name-row input::placeholder { color: #9AA3AE; }
+    .name-row input:focus { outline: 2px solid #2F6F76; outline-offset: 1px; border-color: #2F6F76; }
 </style>
 </head>
 <body>
@@ -190,7 +196,11 @@
         <div class="hiw-item"><span class="hiw-num">1</span>This runs on a shared instructor-provided key — no sign-in needed on your end.</div>
         <div class="hiw-item"><span class="hiw-num">2</span>Budget 30-40 minutes — the session ends automatically at the 40-minute mark and shows your evaluation.</div>
         <div class="hiw-item"><span class="hiw-num">3</span>Done early? Click "End &amp; get feedback" at the top of the interview screen — your evaluation doesn't appear on its own.</div>
-        <div class="hiw-item"><span class="hiw-num">4</span>Nothing is saved on our server after you close the tab — download your evaluation at the end if you want to keep it.</div>
+        <div class="hiw-item"><span class="hiw-num">4</span>During the workshop your instructor can see your name, progress and evaluation on a live dashboard. Your conversation itself is never stored, and everything is cleared after the session — download your evaluation at the end if you want to keep it.</div>
+      </div>
+      <div class="name-row">
+        <label for="studentName">Your name</label>
+        <input id="studentName" type="text" maxlength="40" placeholder="So your instructor can find your session" autocomplete="name" spellcheck="false">
       </div>
       <div class="question-grid" id="questionGrid"></div>
       <p class="setup-note" id="capabilityNotice" hidden></p>
@@ -244,6 +254,8 @@
 
   var state = {
     screen: "setup",
+    sessionId: null,     // per-interview id, only used for the instructor dashboard
+    studentName: "",
     questions: [],
     question: null,
     turns: [],       // {role:'candidate'|'interviewer'|'system_note', content}
@@ -279,6 +291,7 @@
     screenInterview: document.getElementById("screenInterview"),
     screenEval: document.getElementById("screenEval"),
     questionGrid: document.getElementById("questionGrid"),
+    studentName: document.getElementById("studentName"),
     capabilityNotice: document.getElementById("capabilityNotice"),
     questionChip: document.getElementById("questionChip"),
     elapsedValue: document.getElementById("elapsedValue"),
@@ -344,7 +357,17 @@
     });
   }
 
+  function newSessionId() {
+    try {
+      if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+    } catch (e) { /* fall through */ }
+    return (Date.now().toString(36) + Math.random().toString(36).slice(2, 10)).slice(0, 24);
+  }
+
   function startInterview(question) {
+    state.sessionId = newSessionId();
+    state.studentName = (el.studentName && el.studentName.value ? el.studentName.value : "").replace(/\s+/g, " ").trim().slice(0, 40);
+    try { if (state.studentName) window.localStorage.setItem("cir_student_name", state.studentName); } catch (e) { /* ignore */ }
     state.question = question;
     state.turns = [];
     state.display = [];
@@ -456,7 +479,7 @@
       var resp = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId: state.question.id, turns: state.turns }),
+        body: JSON.stringify({ questionId: state.question.id, turns: state.turns, sessionId: state.sessionId, studentName: state.studentName }),
         signal: ctl.signal
       });
       if (!resp.ok || !resp.body) {
@@ -679,7 +702,7 @@
     if (!blob.size) { setMicStatus(""); return; }
     setMicStatus("Transcribing…");
     try {
-      var resp = await fetch("/api/transcribe", {
+      var resp = await fetch("/api/transcribe" + (state.sessionId ? "?sid=" + encodeURIComponent(state.sessionId) : ""), {
         method: "POST",
         headers: { "Content-Type": mimeType },
         body: blob
@@ -823,7 +846,7 @@
       var resp = await fetch("/api/evaluate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ questionId: state.question.id, turns: state.turns })
+        body: JSON.stringify({ questionId: state.question.id, turns: state.turns, sessionId: state.sessionId, studentName: state.studentName })
       });
       var data = await resp.json();
       if (!resp.ok) return renderEvalError(data);
@@ -941,6 +964,10 @@
 
   async function boot() {
     try {
+      try {
+        var savedName = window.localStorage.getItem("cir_student_name");
+        if (savedName && el.studentName && !el.studentName.value) el.studentName.value = savedName;
+      } catch (e) { /* ignore */ }
       var resp = await fetch("/api/questions");
       if (!resp.ok) throw new Error("bad status");
       state.questions = await resp.json();

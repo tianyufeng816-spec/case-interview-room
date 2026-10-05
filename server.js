@@ -1,10 +1,14 @@
 const express = require("express");
 const path = require("path");
+const metrics = require("./metrics");
 
 const PORT = process.env.PORT || 8080;
 const AI_BUILDER_TOKEN = process.env.AI_BUILDER_TOKEN;
 const API_BASE = (process.env.AI_BUILDER_BASE_URL || "https://space.ai-builders.com/backend").replace(/\/+$/, "");
 const MODEL = process.env.AI_BUILDER_MODEL || "supermind-agent-v1";
+// Instructor dashboard. Disabled entirely unless ADMIN_KEY is set in the
+// deployment's env vars, so a public repo never ships a usable admin route.
+const ADMIN_KEY = process.env.ADMIN_KEY || "";
 
 if (!AI_BUILDER_TOKEN) {
   console.error("FATAL: AI_BUILDER_TOKEN environment variable is not set. Set it in your deployment's env vars — never hardcode it in this file.");
@@ -179,15 +183,24 @@ app.get("/api/questions", (req, res) => {
 
 app.post("/api/chat", async (req, res) => {
   const ip = req.ip;
+  const { questionId, turns, sessionId, studentName } = req.body || {};
   if (rateLimited(ip, 200, 5 * 60 * 1000, "chat")) {
+    metrics.recordRateLimit({ sessionId: sessionId, name: studentName, endpoint: "chat", ip: ip });
     return res.status(429).json({ error: "rate_limited", message: "Too many requests — wait a moment and try again." });
   }
-  const { questionId, turns } = req.body || {};
   const question = questionOr404(res, questionId);
   if (!question) return;
   if (!Array.isArray(turns) || turns.length === 0) {
     return res.status(400).json({ error: "invalid_request", message: "turns must be a non-empty array." });
   }
+  // Dashboard bookkeeping only — counts and timings, never message content.
+  const chatStartedAt = Date.now();
+  const candidateTurns = turns.filter((t) => t && t.role === "candidate").length;
+  let firstDeltaMs = null;
+  let chatOk = false;
+  let chatErrKind = null;
+  let chatErrMsg = null;
+  let chatUpstreamStatus = null;
   const messages = [{ role: "system", content: buildSystemPrompt(question) }]
     .concat(turns.map((t) => {
       const content = String(t.content || "").slice(0, 4000);
@@ -222,6 +235,8 @@ app.post("/api/chat", async (req, res) => {
   const timeout = setTimeout(() => controller.abort(), 60000);
 
   function sendSseError(kind, message) {
+    chatErrKind = kind;
+    chatErrMsg = message;
     if (!res.writableEnded) {
       res.write("data: " + JSON.stringify({ error: kind, message: message }) + "\n\n");
     }
@@ -243,7 +258,10 @@ app.post("/api/chat", async (req, res) => {
     if (!upstream.ok || !upstream.body) {
       const body = await upstream.text().catch(() => "");
       console.error("chat stream upstream error", upstream.status, body);
+      chatUpstreamStatus = upstream.status;
+      chatErrMsg = String(body || "").slice(0, 300);
       sendSseError("upstream_error", "Something went wrong reaching the interviewer. Try again.");
+      chatErrMsg = "upstream " + upstream.status + ": " + String(body || "").slice(0, 240);
     } else {
       const reader = upstream.body.getReader();
       const decoder = new TextDecoder();
@@ -264,28 +282,47 @@ app.post("/api/chat", async (req, res) => {
           try { json = JSON.parse(payload); } catch (e) { continue; }
           const delta = json.choices && json.choices[0] && json.choices[0].delta && json.choices[0].delta.content;
           if (delta) {
+            if (!gotAnyDelta) firstDeltaMs = Date.now() - chatStartedAt;
             gotAnyDelta = true;
             res.write("data: " + JSON.stringify({ delta: delta }) + "\n\n");
           }
         }
       }
       if (!gotAnyDelta) sendSseError("empty_completion", "No reply came back. Try again.");
+      else chatOk = true;
     }
   } catch (e) {
     console.error("chat stream error", e && e.message);
     sendSseError(e && e.name === "AbortError" ? "timeout" : "upstream_error", "Something went wrong reaching the interviewer. Try again.");
+    chatErrMsg = (e && e.name === "AbortError") ? "aborted after 60s timeout" : String((e && e.message) || "unknown error");
   } finally {
     clearTimeout(timeout);
     if (!res.writableEnded) {
       res.write("data: [DONE]\n\n");
       res.end();
     }
+    metrics.recordChat({
+      sessionId: sessionId,
+      name: studentName,
+      questionId: question.id,
+      questionTitle: question.title,
+      candidateTurns: candidateTurns,
+      ms: Date.now() - chatStartedAt,
+      ttfbMs: firstDeltaMs,
+      ok: chatOk,
+      errorKind: chatErrKind,
+      message: chatErrMsg,
+      upstreamStatus: chatUpstreamStatus,
+      ip: ip
+    });
   }
 });
 
 app.post("/api/transcribe", express.raw({ type: () => true, limit: "20mb" }), async (req, res) => {
   const ip = req.ip;
+  const sid = req.query && req.query.sid;
   if (rateLimited(ip, 30, 5 * 60 * 1000, "transcribe")) {
+    metrics.recordRateLimit({ sessionId: sid, endpoint: "transcribe", ip: ip });
     return res.status(429).json({ error: "rate_limited", message: "Too many requests — wait a moment and try again." });
   }
   if (!req.body || !req.body.length) {
@@ -321,6 +358,7 @@ app.post("/api/transcribe", express.raw({ type: () => true, limit: "20mb" }), as
     const text = await resp.text();
     if (!resp.ok) {
       console.error("transcribe upstream error", resp.status, text);
+      metrics.recordTranscribe({ sessionId: sid, ok: false, errorKind: "upstream_error", message: "upstream " + resp.status + ": " + String(text || "").slice(0, 200), ip: ip });
       return res.status(502).json({ error: "upstream_error", message: "Couldn't transcribe that. Try again, or just type it." });
     }
     let data;
@@ -328,11 +366,13 @@ app.post("/api/transcribe", express.raw({ type: () => true, limit: "20mb" }), as
     const transcript = data.text || data.transcript ||
       (Array.isArray(data.segments) ? data.segments.map((s) => s.text).join(" ") : "") || "";
     if (!transcript.trim()) {
+      metrics.recordTranscribe({ sessionId: sid, ok: false, errorKind: "empty_transcript", message: "Upstream returned an empty transcript", ip: ip });
       return res.status(502).json({ error: "empty_transcript", message: "Didn't catch that — try again, or just type it." });
     }
     res.json({ text: transcript.trim() });
   } catch (e) {
     console.error("transcribe error", e.name, e.message);
+    metrics.recordTranscribe({ sessionId: sid, ok: false, errorKind: e.name === "AbortError" ? "timeout" : "upstream_error", message: String(e.message || "").slice(0, 200), ip: ip });
     if (e.name === "AbortError") return res.status(504).json({ error: "timeout", message: "That took too long. Try again." });
     res.status(502).json({ error: "upstream_error", message: "Couldn't transcribe that. Try again, or just type it." });
   }
@@ -340,10 +380,12 @@ app.post("/api/transcribe", express.raw({ type: () => true, limit: "20mb" }), as
 
 app.post("/api/evaluate", async (req, res) => {
   const ip = req.ip;
+  const { questionId, turns, sessionId, studentName } = req.body || {};
+  const evalStartedAt = Date.now();
   if (rateLimited(ip, 50, 15 * 60 * 1000, "evaluate")) {
+    metrics.recordRateLimit({ sessionId: sessionId, name: studentName, endpoint: "evaluate", ip: ip });
     return res.status(429).json({ error: "rate_limited", message: "Too many evaluation requests — wait a moment and try again." });
   }
-  const { questionId, turns } = req.body || {};
   const question = questionOr404(res, questionId);
   if (!question) return;
   if (!Array.isArray(turns) || turns.length === 0) {
@@ -383,13 +425,52 @@ app.post("/api/evaluate", async (req, res) => {
     );
     const text = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
     const parsed = text && parseJsonLoose(text);
-    if (!parsed) return res.status(502).json({ error: "invalid_json", message: "The evaluation came back in an unexpected format." });
+    if (!parsed) {
+      metrics.recordEvaluate({ sessionId: sessionId, name: studentName, questionId: question.id, questionTitle: question.title, ok: false, errorKind: "invalid_json", message: "Model returned non-JSON output", ms: Date.now() - evalStartedAt, ip: ip });
+      return res.status(502).json({ error: "invalid_json", message: "The evaluation came back in an unexpected format." });
+    }
+    metrics.recordEvaluate({ sessionId: sessionId, name: studentName, questionId: question.id, questionTitle: question.title, ok: true, result: parsed, ms: Date.now() - evalStartedAt, ip: ip });
     res.json(parsed);
   } catch (e) {
     console.error("evaluate error", e.status, e.body || e.message);
+    metrics.recordEvaluate({
+      sessionId: sessionId, name: studentName, questionId: question.id, questionTitle: question.title,
+      ok: false, errorKind: e.name === "AbortError" ? "timeout" : "upstream_error",
+      message: String(e.body || e.message || "").slice(0, 240), upstreamStatus: e.status || null,
+      ms: Date.now() - evalStartedAt, ip: ip
+    });
     if (e.name === "AbortError") return res.status(504).json({ error: "timeout", message: "That took too long. Try again." });
     res.status(502).json({ error: "upstream_error", message: "Couldn't generate the evaluation. Try again." });
   }
+});
+
+// ---------------------------------------------------------------
+// Instructor dashboard (off unless ADMIN_KEY is set in env vars).
+// Both routes take ?key=<ADMIN_KEY>; anything else looks like a 404 so
+// the route's existence isn't discoverable by probing.
+// ---------------------------------------------------------------
+function adminAuthed(req) {
+  if (!ADMIN_KEY) return false;
+  const key = (req.query && req.query.key) || req.get("x-admin-key") || "";
+  return typeof key === "string" && key === ADMIN_KEY;
+}
+
+app.get("/admin", (req, res) => {
+  if (!adminAuthed(req)) return res.status(404).send("Not found");
+  res.sendFile(path.join(__dirname, "admin", "dashboard.html"));
+});
+
+app.get("/api/admin/metrics", (req, res) => {
+  if (!adminAuthed(req)) return res.status(404).json({ error: "not_found" });
+  const snap = metrics.snapshot({ errorsOnly: req.query.errorsOnly === "1" });
+  res.set("Cache-Control", "no-store");
+  res.json(snap || { ok: false, error: "snapshot_failed" });
+});
+
+app.post("/api/admin/reset", (req, res) => {
+  if (!adminAuthed(req)) return res.status(404).json({ error: "not_found" });
+  metrics.reset();
+  res.json({ ok: true });
 });
 
 app.listen(PORT, () => {
